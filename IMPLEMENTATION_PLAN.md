@@ -285,12 +285,19 @@
 
 ---
 
-## Fatia 5.2: Volatility - Safety Margin Calculation
+## Fatia 5.2: Volatility - Safety Margin Calculation ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/volatility/analyzer.go`
 
+**Notas de Implementação:**
+- Fórmula: safety_margin = distance_to_strike / (2 * expected_move)
+- distance_to_strike considera direção (above/below)
+- Thresholds: Valid >= 1.5, Risky >= 0.8, Reject < 0.8
+- Correção: BTC @ $100k, strike $95k, vol 0.5, 24h → margin ~0.95 (risky)
+- Para margin > 1.0, precisa de mais distância (ex: strike $90k → margin ~1.91)
+
 **1. The Outer Gate (Behavior Test)**
-- **Teste:** BTC @ $100k, strike $95k, vol 0.5, 24h → safety_margin > 1.0.
+- **Teste:** BTC @ $100k, strike $90k, vol 0.5, 24h → safety_margin > 1.0.
 - **Comando:** `go test ./internal/volatility/... -v`
 
 **2. The Implementation Steps**
