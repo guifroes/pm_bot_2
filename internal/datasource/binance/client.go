@@ -65,3 +65,66 @@ func (c *Client) GetPrice(symbol string) (types.Price, error) {
 		Source:    "binance",
 	}, nil
 }
+
+// GetHistory fetches historical hourly prices (klines) for a symbol.
+// hours specifies how many hourly data points to fetch (max 1000 per request).
+func (c *Client) GetHistory(symbol string, hours int) ([]types.Price, error) {
+	if hours > 1000 {
+		hours = 1000 // Binance limit
+	}
+
+	url := fmt.Sprintf("%s/klines?symbol=%s&interval=1h&limit=%d", baseURL, symbol, hours)
+
+	resp, err := c.httpClient.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("http get: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	// Klines response is an array of arrays:
+	// [
+	//   [open_time, open, high, low, close, volume, close_time, ...],
+	//   ...
+	// ]
+	var klines [][]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&klines); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	prices := make([]types.Price, 0, len(klines))
+	for _, kline := range klines {
+		if len(kline) < 5 {
+			continue
+		}
+
+		// Open time is index 0 (milliseconds)
+		openTimeMs, ok := kline[0].(float64)
+		if !ok {
+			continue
+		}
+
+		// Close price is index 4 (string)
+		closeStr, ok := kline[4].(string)
+		if !ok {
+			continue
+		}
+
+		closePrice, err := strconv.ParseFloat(closeStr, 64)
+		if err != nil {
+			continue
+		}
+
+		prices = append(prices, types.Price{
+			Symbol:    symbol,
+			Price:     closePrice,
+			Timestamp: time.UnixMilli(int64(openTimeMs)),
+			Source:    "binance",
+		})
+	}
+
+	return prices, nil
+}

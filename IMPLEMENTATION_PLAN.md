@@ -85,7 +85,7 @@
 
 ---
 
-## Fatia 2.2: Binance - Fetch Histórico
+## Fatia 2.2: Binance - Fetch Histórico ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/datasource/binance/client.go` (update)
 
