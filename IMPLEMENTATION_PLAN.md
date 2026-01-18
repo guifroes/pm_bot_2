@@ -440,9 +440,15 @@
 
 # FASE 8: ABRIR POSIÇÃO (DRY-RUN)
 
-## Fatia 8.1: Position Manager - Repositories
+## Fatia 8.1: Position Manager - Repositories ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/persistence/positions.go`, `internal/persistence/bankroll.go`
+
+**Notas de Implementação:**
+- PositionRepository: Create, GetByID, GetOpen, GetOpenByPlatform, GetByMarket, Update, Close
+- BankrollRepository: Get, GetAll, Update, Initialize, AddToBalance
+- Testes cobrem todos os métodos CRUD e cenários de uso
+- Struct Position estendida com campos para tracking (safety_margin, volatility, exit details)
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** CRUD de positions e bankroll no SQLite.
