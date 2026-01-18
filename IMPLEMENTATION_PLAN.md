@@ -483,9 +483,15 @@
 
 ---
 
-## Fatia 8.3: Polymarket - Place Order (DRY-RUN)
+## Fatia 8.3: Polymarket - Place Order (DRY-RUN) ✅ CONCLUÍDA
 **Risco de Contexto:** Médio ⚠️
 **Arquivos Esperados:** `internal/platform/polymarket/orders.go`, `pkg/types/order.go`
+
+**Notas de Implementação:**
+- Structs Order e OrderResult em pkg/types/order.go com tipos auxiliares (OrderSide, OrderType, TimeInForce, OrderStatus)
+- PlaceOrder valida campos obrigatórios (MarketID, TokenID, Size > 0, Price 0-1)
+- DRY-RUN retorna OrderResult simulado com UUID único e IsDryRun=true
+- Live trading placeholder para Fatia 13.1
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** `PlaceOrder()` em DRY_RUN retorna OrderResult simulado sem executar.
