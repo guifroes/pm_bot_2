@@ -39,7 +39,7 @@
 
 ---
 
-## Fatia 1.3: SQLite - Conexão e Migration Runner
+## Fatia 1.3: SQLite - Conexão e Migration Runner ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/persistence/db.go`, `migrations/001_initial.sql`
 
