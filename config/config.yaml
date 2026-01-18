@@ -1,0 +1,15 @@
+bankroll:
+  polymarket: 50.0
+  kalshi: 50.0
+
+scan:
+  interval_seconds: 10
+
+parameters:
+  probability_threshold: 0.80
+  volatility_safety_margin: 1.5
+  stop_loss_percent: 0.15
+  kelly_fraction: 0.25
+
+database:
+  path: "~/.prediction-bot/bot.db"
