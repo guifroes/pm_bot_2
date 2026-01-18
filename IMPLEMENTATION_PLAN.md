@@ -307,9 +307,15 @@
 
 ---
 
-## Fatia 5.3: Volatility - Service Integrado com DataSource
+## Fatia 5.3: Volatility - Service Integrado com DataSource ✅ CONCLUÍDA
 **Risco de Contexto:** Médio
 **Arquivos Esperados:** `internal/volatility/service.go`
+
+**Notas de Implementação:**
+- Service combina DataSource Aggregator + Calculator + Analyzer
+- Busca preço atual e histórico (336h = 14 dias) via aggregator
+- Calcula volatilidade e retorna ServiceResult completo
+- Testes com BTC e ETH reais confirmam funcionamento
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** `AnalyzeAsset("BTC", $100000, "above", 24h)` busca dados reais e retorna análise.
