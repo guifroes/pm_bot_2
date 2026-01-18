@@ -204,9 +204,14 @@
 
 ---
 
-## Fatia 4.2: Kalshi - Listar Mercados Ativos
+## Fatia 4.2: Kalshi - Listar Mercados Ativos ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/platform/kalshi/markets.go`
+
+**Notas de Implementação:**
+- API Kalshi aceita `status=open` como filtro mas retorna `status: "active"` na resposta
+- Preços são retornados em centavos (0-100), convertidos para decimal (0.0-1.0)
+- Volume e liquidez são em centavos, convertidos para dólares
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** `ListMarkets(filter{IsActive: true})` retorna mercados ativos.
