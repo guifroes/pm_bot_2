@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"prediction-bot/pkg/types"
 )
 
 func TestClient_Ping_Success(t *testing.T) {
@@ -73,5 +75,44 @@ func TestNewClient_MissingCredentials_ReturnsError(t *testing.T) {
 	_, err := NewClient()
 	if err == nil {
 		t.Error("expected error when credentials are missing, got nil")
+	}
+}
+
+func TestClient_ListMarkets_ReturnsActiveMarkets(t *testing.T) {
+	client := &Client{
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		baseURL:    clobBaseURL,
+	}
+
+	active := true
+	markets, err := client.ListMarkets(types.MarketFilter{
+		IsActive: &active,
+		Limit:    10,
+	})
+	if err != nil {
+		t.Fatalf("ListMarkets: %v", err)
+	}
+
+	if len(markets) == 0 {
+		t.Error("expected non-empty list of markets")
+	}
+
+	t.Logf("Found %d active markets", len(markets))
+
+	// Verify first market has expected fields
+	if len(markets) > 0 {
+		m := markets[0]
+		t.Logf("First market: ID=%s, Title=%s, Active=%v, YesPrice=%.2f",
+			m.ID, m.Title, m.Active, m.OutcomeYesPrice)
+
+		if m.ID == "" {
+			t.Error("market ID should not be empty")
+		}
+		if m.Title == "" {
+			t.Error("market Title should not be empty")
+		}
+		if m.Platform != "polymarket" {
+			t.Errorf("expected platform 'polymarket', got '%s'", m.Platform)
+		}
 	}
 }

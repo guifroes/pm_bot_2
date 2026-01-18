@@ -142,7 +142,7 @@
 
 ---
 
-## Fatia 3.2: Polymarket - Listar Mercados Ativos
+## Fatia 3.2: Polymarket - Listar Mercados Ativos ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/platform/polymarket/markets.go`, `pkg/types/market.go`
 
