@@ -1,0 +1,719 @@
+# IMPLEMENTATION PLAN - Prediction Market Bot
+## Micro-Fatias Verticais (v2 - Revisado)
+
+> **Regra de Atomicidade:** Cada fatia toca no máximo 3 arquivos e resolve UM caminho de execução.
+> **Estratégia de Teste:** Testes comportamentais realistas, sem mocks quando possível, acessando endpoints reais (exceto operações com dinheiro real).
+
+---
+
+# FASE 1: FUNDAÇÕES (Setup + Conectividade Básica)
+
+## Fatia 1.1: Projeto Go - Estrutura Base ✅ CONCLUÍDA
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `go.mod`, `cmd/bot/main.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `go run cmd/bot/main.go` imprime "Bot starting..." e encerra sem erros.
+- **Comando:** `go run cmd/bot/main.go`
+
+**2. The Implementation Steps**
+- Passo A: Criar `go.mod` com module `prediction-bot`
+- Passo B: Criar `cmd/bot/main.go` com func main que imprime e sai
+- Passo C: Criar diretórios vazios: `internal/`, `pkg/`, `config/`, `migrations/`
+
+---
+
+## Fatia 1.2: Configuração - Carregar YAML
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/config/config.go`, `config/config.yaml`, `cmd/bot/main.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** O bot carrega `config.yaml` e imprime os valores de bankroll.
+- **Comando:** `go run cmd/bot/main.go`
+
+**2. The Implementation Steps**
+- Passo A: Criar struct `Config` com campos bankroll, scan, parameters, database
+- Passo B: Implementar `LoadConfig(path string) (*Config, error)` usando yaml.v3
+- Passo C: Criar `config/config.yaml` com valores default do CLAUDE.md
+- Passo D: Atualizar main.go para carregar e imprimir config
+
+---
+
+## Fatia 1.3: SQLite - Conexão e Migration Runner
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/persistence/db.go`, `migrations/001_initial.sql`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** O bot cria `bot.db`, tabela `schema_version` existe.
+- **Comando:** `go test ./internal/persistence/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar `OpenDB(path string) (*sql.DB, error)` com WAL mode
+- Passo B: Criar `RunMigrations(db, migrationsDir)` que executa .sql em ordem
+- Passo C: Criar `001_initial.sql` com `schema_version` e `bankroll`
+
+---
+
+## Fatia 1.4: SQLite - Schema Completo
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `migrations/002_core_tables.sql`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Todas as tabelas (positions, parameters, events, price_cache, api_log) existem.
+- **Comando:** `go test ./internal/persistence/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar migration com tabelas: positions, parameters, events
+- Passo B: Criar tabelas: price_cache, price_history, api_log
+- Passo C: Inserir parâmetros default (prob=0.80, margin=1.5, stop=0.15, kelly=0.25)
+
+---
+
+# FASE 2: BUSCAR PREÇO DO BITCOIN (End-to-End Vertical)
+
+## Fatia 2.1: Binance - Fetch Preço Atual
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/datasource/binance/client.go`, `pkg/types/price.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `GetPrice("BTCUSDT")` retorna preço > 0 da API real da Binance.
+- **Comando:** `go test ./internal/datasource/binance/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar struct `Price` em `pkg/types/price.go`
+- Passo B: Criar `BinanceClient.GetPrice(symbol) (Price, error)` usando REST
+
+---
+
+## Fatia 2.2: Binance - Fetch Histórico
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/datasource/binance/client.go` (update)
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `GetHistory("BTCUSDT", 336)` retorna 336 pontos de preço horário.
+- **Comando:** `go test ./internal/datasource/binance/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `GetHistory(symbol, hours int) ([]Price, error)` usando klines
+
+---
+
+## Fatia 2.3: Alpha Vantage - Fetch Preço Atual
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/datasource/alphavantage/client.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `GetPrice("SPY")` retorna preço do S&P 500 ETF (requer API key).
+- **Comando:** `go test ./internal/datasource/alphavantage/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar `AlphaVantageClient` com API key do env
+- Passo B: Implementar `GetPrice(symbol) (Price, error)` usando GLOBAL_QUOTE
+
+---
+
+## Fatia 2.4: Data Source - Aggregator + Symbol Mapper
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/datasource/aggregator.go`, `internal/datasource/mapper.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `GetPrice("Bitcoin")` roteia para Binance e retorna preço BTC.
+- **Comando:** `go test ./internal/datasource/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar `SymbolMapper` com mapeamentos (Bitcoin→BTCUSDT, S&P 500→SPY)
+- Passo B: Criar `DataSourceAggregator` que roteia para fonte correta
+
+---
+
+# FASE 3: LISTAR MERCADOS DA POLYMARKET (End-to-End Vertical)
+
+## Fatia 3.1: Polymarket - Client Base + Auth
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/platform/polymarket/client.go`, `internal/platform/polymarket/auth.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Request autenticado para Polymarket não retorna erro de auth.
+- **Comando:** `go test ./internal/platform/polymarket/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar `PolymarketClient` com private key do env
+- Passo B: Implementar assinatura de requests (wallet signature EIP-712)
+
+---
+
+## Fatia 3.2: Polymarket - Listar Mercados Ativos
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/platform/polymarket/markets.go`, `pkg/types/market.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `ListMarkets(filter{IsActive: true})` retorna lista não-vazia de mercados reais.
+- **Comando:** `go test ./internal/platform/polymarket/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar structs `Market`, `MarketFilter` em pkg/types
+- Passo B: Implementar `ListMarkets(filter) ([]Market, error)`
+
+---
+
+## Fatia 3.3: Polymarket - Get Market + OrderBook
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/platform/polymarket/orderbook.go`, `pkg/types/orderbook.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `GetOrderBook(marketID)` para mercado ativo retorna bids/asks.
+- **Comando:** `go test ./internal/platform/polymarket/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar structs `OrderBook`, `Level` em pkg/types
+- Passo B: Implementar `GetOrderBook(marketID) (OrderBook, error)`
+
+---
+
+## Fatia 3.4: Polymarket - Get Balance
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/platform/polymarket/account.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `GetBalance()` retorna saldo USDC da wallet (pode ser 0).
+- **Comando:** `go test ./internal/platform/polymarket/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `GetBalance() (Balance, error)` consultando Polygon
+
+---
+
+# FASE 4: LISTAR MERCADOS DA KALSHI (End-to-End Vertical)
+
+## Fatia 4.1: Kalshi - Client Base + Auth HMAC
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/platform/kalshi/client.go`, `internal/platform/kalshi/auth.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Request autenticado para Kalshi não retorna erro de auth.
+- **Comando:** `go test ./internal/platform/kalshi/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar `KalshiClient` com API key/secret do env
+- Passo B: Implementar HMAC signature para requests
+
+---
+
+## Fatia 4.2: Kalshi - Listar Mercados Ativos
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/platform/kalshi/markets.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `ListMarkets(filter{IsActive: true})` retorna mercados ativos.
+- **Comando:** `go test ./internal/platform/kalshi/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `ListMarkets(filter) ([]Market, error)`
+- Passo B: Mapear response Kalshi para struct Market comum
+
+---
+
+## Fatia 4.3: Kalshi - Get Balance + Positions
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/platform/kalshi/account.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `GetBalance()` e `GetPositions()` retornam sem erro.
+- **Comando:** `go test ./internal/platform/kalshi/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `GetBalance() (Balance, error)`
+- Passo B: Implementar `GetPositions() ([]Position, error)`
+
+---
+
+## Fatia 4.4: Platform - Interface Comum + Rate Limiter
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/platform/platform.go`, `internal/platform/ratelimit.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Rate limiter bloqueia chamada excedente (100/min Poly, 30/min Kalshi).
+- **Comando:** `go test ./internal/platform/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Definir interface `Platform` em platform.go
+- Passo B: Implementar token bucket rate limiter
+
+---
+
+# FASE 5: ANALISAR VOLATILIDADE DE UM ATIVO
+
+## Fatia 5.1: Volatility - Cálculo de Volatilidade Histórica
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/volatility/calculator.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Dado array de preços, retorna volatilidade anualizada entre 0 e 2.
+- **Comando:** `go test ./internal/volatility/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `CalculateVolatility(prices []Price, isCrypto bool) float64`
+- Passo B: Calcular std dev de daily returns, anualizar (365 crypto, 252 stocks)
+
+---
+
+## Fatia 5.2: Volatility - Safety Margin Calculation
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/volatility/analyzer.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** BTC @ $100k, strike $95k, vol 0.5, 24h → safety_margin > 1.0.
+- **Comando:** `go test ./internal/volatility/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar structs `AnalysisInput`, `AnalysisResult`
+- Passo B: Implementar `Analyze(input) Result` com distance_to_strike, expected_move, safety_margin
+- Passo C: Determinar recommendation (valid/risky/reject)
+
+---
+
+## Fatia 5.3: Volatility - Service Integrado com DataSource
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/volatility/service.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `AnalyzeAsset("BTC", $100000, "above", 24h)` busca dados reais e retorna análise.
+- **Comando:** `go test ./internal/volatility/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar `VolatilityService` que combina DataSource + Analyzer
+- Passo B: Buscar histórico via aggregator, calcular, analisar
+
+---
+
+# FASE 6: ESCANEAR MERCADOS ELEGÍVEIS
+
+## Fatia 6.1: Scanner - Parser de Títulos
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/scanner/parser.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Parse "Will Bitcoin be above $100,000 on Jan 18?" → `{Asset: "BTC", Strike: 100000, Direction: "above"}`
+- **Comando:** `go test ./internal/scanner/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Regex para extrair asset (Bitcoin→BTC, S&P 500→SPY)
+- Passo B: Regex para extrair strike price ($100,000, $100k, 100000)
+- Passo C: Regex para extrair direction (above/below/over/under)
+
+---
+
+## Fatia 6.2: Scanner - Filtro de Elegibilidade
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/scanner/filter.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Mercado prob=85%, closes=24h, liquidity=$500 → eligible=true.
+- **Comando:** `go test ./internal/scanner/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `IsEligible(market, params) bool`
+- Passo B: Checks: probability >= threshold, time < 48h, liquidity >= $100
+
+---
+
+## Fatia 6.3: Scanner - Scan Single Platform
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/scanner/scanner.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Scan Polymarket retorna mercados elegíveis (pode ser 0 ou mais).
+- **Comando:** `go test ./internal/scanner/... -v -timeout 60s`
+
+**2. The Implementation Steps**
+- Passo A: Criar `Scanner.Scan(platform Platform) ([]EligibleMarket, error)`
+- Passo B: ListMarkets → Filter → Parse titles → Return eligible
+
+---
+
+# FASE 7: CALCULAR TAMANHO DA POSIÇÃO
+
+## Fatia 7.1: Sizing - Kelly Criterion
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/sizing/kelly.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Entry 0.90, prob 0.92, bankroll $50, fraction 0.25 → position ~$2.50.
+- **Comando:** `go test ./internal/sizing/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `CalculateKelly(entryPrice, winProb, bankroll, fraction) float64`
+- Passo B: Fórmula: f = (p*b - q) / b, b = (1-price)/price
+
+---
+
+## Fatia 7.2: Sizing - Constraints e Win Probability
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/sizing/sizer.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Position nunca excede 20% do bankroll, mínimo $1.
+- **Comando:** `go test ./internal/sizing/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar `Sizer.Calculate(input) SizingOutput`
+- Passo B: Aplicar constraints: min $1, max 20%, round down
+- Passo C: Implementar `EstimateWinProbability(marketPrice, safetyMargin)`
+
+---
+
+# FASE 8: ABRIR POSIÇÃO (DRY-RUN)
+
+## Fatia 8.1: Position Manager - Repositories
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/persistence/positions.go`, `internal/persistence/bankroll.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** CRUD de positions e bankroll no SQLite.
+- **Comando:** `go test ./internal/persistence/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar `PositionRepository` com Create, GetOpen, GetByMarket, Update, Close
+- Passo B: Criar `BankrollRepository` com Get, Update, Initialize
+
+---
+
+## Fatia 8.2: Position Manager - Entry Flow (DRY-RUN)
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/position/manager.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Processar EligibleMarket → volatility OK → sizing → persist Position (sem ordem real).
+- **Comando:** `go test ./internal/position/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar `PositionManager` com dependencies injetadas
+- Passo B: Implementar `ProcessEntry(market, dryRun bool) error`
+- Passo C: Check duplicate → Volatility → Sizing → Persist → Log
+
+---
+
+## Fatia 8.3: Polymarket - Place Order (DRY-RUN)
+**Risco de Contexto:** Médio ⚠️
+**Arquivos Esperados:** `internal/platform/polymarket/orders.go`, `pkg/types/order.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `PlaceOrder()` em DRY_RUN retorna OrderResult simulado sem executar.
+- **Comando:** `go test ./internal/platform/polymarket/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar structs `Order`, `OrderResult` em pkg/types
+- Passo B: Implementar `PlaceOrder(order, dryRun bool) (OrderResult, error)`
+- Passo C: Em dryRun=true, retornar resultado simulado
+
+---
+
+# FASE 9: MONITORAR E SAIR DA POSIÇÃO
+
+## Fatia 9.1: Position Monitor - Stop Loss
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/position/monitor.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Position entry=0.90, current=0.76 (>15% loss) → trigger exit.
+- **Comando:** `go test ./internal/position/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `CheckStopLoss(position, currentPrice) bool`
+- Passo B: Threshold: entry_price * (1 - stop_loss_percent)
+
+---
+
+## Fatia 9.2: Position Monitor - Volatility Exit
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/position/monitor.go` (update)
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Safety margin atual < 0.8 → trigger volatility exit.
+- **Comando:** `go test ./internal/position/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `CheckVolatilityExit(position) (bool, error)`
+- Passo B: Re-calcular safety margin com dados atuais
+
+---
+
+## Fatia 9.3: Position Manager - Execute Exit (DRY-RUN)
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/position/manager.go` (update)
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Exit em dryRun calcula PnL e atualiza position no DB.
+- **Comando:** `go test ./internal/position/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `ExecuteExit(positionID, reason, dryRun) error`
+- Passo B: Calcular realized PnL
+- Passo C: Atualizar position status='closed', bankroll
+
+---
+
+# FASE 10: BOT LOOP PRINCIPAL
+
+## Fatia 10.1: Bot - Scan Cycle
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/bot/bot.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Um ciclo de scan executa sem erro (APIs reais).
+- **Comando:** `go test ./internal/bot/... -v -timeout 60s`
+
+**2. The Implementation Steps**
+- Passo A: Criar `Bot` struct com todas dependencies
+- Passo B: Implementar `RunScanCycle() error`
+- Passo C: Scan both platforms → Process eligible markets
+
+---
+
+## Fatia 10.2: Bot - Monitor Cycle
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/bot/bot.go` (update)
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Monitor cycle checa todas positions abertas.
+- **Comando:** `go test ./internal/bot/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `RunMonitorCycle() error`
+- Passo B: Para cada position aberta: check stop loss, volatility exit, resolution
+
+---
+
+## Fatia 10.3: Bot - Main Loop Contínuo
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/bot/bot.go`, `cmd/bot/main.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** `go run cmd/bot/main.go --dry-run` roda por 30s e para gracefully.
+- **Comando:** `go run cmd/bot/main.go --dry-run` (Ctrl+C after 30s)
+
+**2. The Implementation Steps**
+- Passo A: Implementar `Run(ctx context.Context) error` com ticker 10s
+- Passo B: Graceful shutdown via context
+- Passo C: CLI com flags: --config, --dry-run, --verbose
+
+---
+
+# FASE 11: LEARNING SYSTEM
+
+## Fatia 11.1: Learning - Coletar Trade Outcomes
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/learning/collector.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Coleta últimos 20 trades fechados com parâmetros usados.
+- **Comando:** `go test ./internal/learning/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Criar struct `TradeOutcome`
+- Passo B: Implementar `CollectOutcomes(minTrades int) ([]TradeOutcome, error)`
+
+---
+
+## Fatia 11.2: Learning - Análise por Segmento
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/learning/analyzer.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Calcular win rate por segmento de probability.
+- **Comando:** `go test ./internal/learning/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `AnalyzeBySegment(outcomes, paramName) []SegmentStats`
+- Passo B: Agrupar por ranges, calcular win rate e avg PnL
+
+---
+
+## Fatia 11.3: Learning - Ajustar Parâmetros
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/learning/adjuster.go`, `internal/persistence/parameters.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Ajuste gradual (max 10%) em direção ao melhor segmento.
+- **Comando:** `go test ./internal/learning/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar `SuggestAdjustment(current, segments, bounds) float64`
+- Passo B: Criar `ParametersRepository` com GetCurrent, Save
+- Passo C: Guardrails: min 20 trades, cooldown, revert on 20% drawdown
+
+---
+
+# FASE 12: DASHBOARD (Terminal UI)
+
+## Fatia 12.1: Dashboard - Layout Base
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/dashboard/app.go`, `internal/dashboard/model.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Dashboard mostra header com título e timestamp.
+- **Comando:** `go run cmd/bot/main.go --dashboard`
+
+**2. The Implementation Steps**
+- Passo A: Setup bubbletea com Model, Update, View
+- Passo B: Renderizar header com timestamp atualizando a cada segundo
+
+---
+
+## Fatia 12.2: Dashboard - Seções Bankroll e Positions
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/dashboard/views/bankroll.go`, `internal/dashboard/views/positions.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Mostra saldo por plataforma e lista de positions abertas.
+- **Comando:** `go run cmd/bot/main.go --dashboard`
+
+**2. The Implementation Steps**
+- Passo A: View bankroll com delta desde initial
+- Passo B: View positions com PnL colorido (verde/vermelho)
+
+---
+
+## Fatia 12.3: Dashboard - Seções Stats e Keyboard
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/dashboard/views/stats.go`, `internal/dashboard/keys.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Mostra stats (win rate, total PnL), Q para sair funciona.
+- **Comando:** `go run cmd/bot/main.go --dashboard`
+
+**2. The Implementation Steps**
+- Passo A: View stats com trades, win rate, PnL, drawdown
+- Passo B: Key handlers: Q (quit), P (pause), R (refresh)
+
+---
+
+# FASE 13: LIVE TRADING (CUIDADO!)
+
+## Fatia 13.1: Polymarket - Place Order REAL
+**Risco de Contexto:** ALTO ⚠️ - REQUER REVISÃO MANUAL
+**Arquivos Esperados:** `internal/platform/polymarket/orders.go` (update)
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Com `--live` flag, ordem é submetida à CLOB API real.
+- **Comando:** Manual testing with minimal amount ($1)
+
+**2. The Implementation Steps**
+- Passo A: Remover DRY_RUN quando flag `--live` presente
+- Passo B: Adicionar confirmação interativa antes de ativar
+- Passo C: Log MUITO verbose para auditoria completa
+
+---
+
+## Fatia 13.2: Kalshi - Place Order REAL
+**Risco de Contexto:** ALTO ⚠️ - REQUER REVISÃO MANUAL
+**Arquivos Esperados:** `internal/platform/kalshi/orders.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Com `--live` flag, ordem é submetida à API Kalshi real.
+- **Comando:** Manual testing with minimal amount ($1)
+
+**2. The Implementation Steps**
+- Passo A: Implementar `PlaceOrder(order, dryRun) (OrderResult, error)`
+- Passo B: Mesmas proteções da Polymarket
+
+---
+
+# FASE 14: BACKTESTING (OPCIONAL)
+
+## Fatia 14.1: Backtest - Data Loader
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/backtest/loader.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Carregar CSV de histórico e retornar timeline.
+- **Comando:** `go test ./internal/backtest/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Definir formato CSV para dados históricos
+- Passo B: Implementar parser para HistoricalMarket
+
+---
+
+## Fatia 14.2: Backtest - Simulation Engine
+**Risco de Contexto:** Médio
+**Arquivos Esperados:** `internal/backtest/engine.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Simular período com dados mock retorna métricas.
+- **Comando:** `go test ./internal/backtest/... -v`
+
+**2. The Implementation Steps**
+- Passo A: Implementar loop de simulação timestamp por timestamp
+- Passo B: Usar mesma lógica de Scanner/PositionManager
+
+---
+
+## Fatia 14.3: Backtest - Report
+**Risco de Contexto:** Baixo
+**Arquivos Esperados:** `internal/backtest/report.go`
+
+**1. The Outer Gate (Behavior Test)**
+- **Teste:** Gerar sumário no terminal e CSV de trades.
+- **Comando:** `go run cmd/bot/main.go backtest --start 2024-01-01 --end 2024-06-30`
+
+**2. The Implementation Steps**
+- Passo A: Formatar BacktestResult para terminal
+- Passo B: Exportar TradeLog para CSV
+
+---
+
+# CHECKPOINTS DE VALIDAÇÃO
+
+Após CADA fatia:
+
+```bash
+go build ./...
+go test ./...
+go vet ./...
+```
+
+Se falhar, NÃO avançar.
+
+---
+
+# RESUMO
+
+| Fase | Descrição | Fatias | Crítico |
+|------|-----------|--------|---------|
+| 1 | Fundações | 4 | ✅ |
+| 2 | Fetch Preço BTC | 4 | ✅ |
+| 3 | Listar Mercados Poly | 4 | ✅ |
+| 4 | Listar Mercados Kalshi | 4 | ✅ |
+| 5 | Analisar Volatilidade | 3 | ✅ |
+| 6 | Escanear Mercados | 3 | ✅ |
+| 7 | Calcular Posição | 2 | ✅ |
+| 8 | Abrir Posição (DRY) | 3 | ✅ |
+| 9 | Monitorar e Sair | 3 | ✅ |
+| 10 | Bot Loop | 3 | ✅ |
+| 11 | Learning System | 3 | |
+| 12 | Dashboard | 3 | |
+| 13 | Live Trading | 2 | ⚠️ |
+| 14 | Backtesting | 3 | |
+
+**Total: 44 micro-fatias**
+
+---
+
+# ORDEM DE EXECUÇÃO
+
+```
+1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14
+```
+
+Fases 1-10 são o MVP funcional (DRY-RUN).
+Fase 13 ativa dinheiro real - REQUER REVISÃO MANUAL COMPLETA.
+
+---
+
+# NOTAS DE SEGURANÇA
+
+1. **NUNCA commitar chaves privadas** - use .env ou variáveis de ambiente
+2. **Fase 13 (Live Trading)**: SEMPRE testar com valor mínimo ($1) primeiro
+3. **Todos os testes contra APIs reais**: respeitar rate limits
+4. **Default é DRY-RUN**: flag `--live` necessária para ordens reais
