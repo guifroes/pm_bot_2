@@ -170,7 +170,7 @@
 
 ---
 
-## Fatia 3.4: Polymarket - Get Balance
+## Fatia 3.4: Polymarket - Get Balance ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/platform/polymarket/account.go`
 
