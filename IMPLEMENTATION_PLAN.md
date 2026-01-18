@@ -223,9 +223,15 @@
 
 ---
 
-## Fatia 4.3: Kalshi - Get Balance + Positions
+## Fatia 4.3: Kalshi - Get Balance + Positions ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/platform/kalshi/account.go`
+
+**Notas de Implementação:**
+- GetBalance já existia no client.go, movido conceitualmente para account.go
+- GetPositions implementado retornando []types.Position
+- Valores monetários da Kalshi (centavos) convertidos para dólares
+- Tipo Position criado em pkg/types/position.go
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** `GetBalance()` e `GetPositions()` retornam sem erro.
