@@ -351,9 +351,16 @@
 
 ---
 
-## Fatia 6.2: Scanner - Filtro de Elegibilidade
+## Fatia 6.2: Scanner - Filtro de Elegibilidade ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/scanner/filter.go`
+
+**Notas de Implementação:**
+- EligibilityFilter struct com parâmetros de config injetados
+- EligibilityResult retorna Eligible, Reasons, Probability, BetSide
+- Constantes: MaxTimeToResolution=48h, MinLiquidity=$100
+- Suporte para YES e NO outcomes (escolhe maior probabilidade)
+- Edge cases: market closed, not active, already ended
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Mercado prob=85%, closes=24h, liquidity=$500 → eligible=true.
