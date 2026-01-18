@@ -395,9 +395,15 @@
 
 # FASE 7: CALCULAR TAMANHO DA POSIÇÃO
 
-## Fatia 7.1: Sizing - Kelly Criterion
+## Fatia 7.1: Sizing - Kelly Criterion ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/sizing/kelly.go`
+
+**Notas de Implementação:**
+- Fórmula Kelly: f = (p*b - q) / b onde b = (1-price)/price
+- Suporta fractional Kelly (quarter Kelly = 0.25 para reduzir risco)
+- Validação completa de inputs (edge cases, negative edge retorna 0)
+- Testes cobrem: standard case, negative edge, zero inputs, formula verification
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Entry 0.90, prob 0.92, bankroll $50, fraction 0.25 → position ~$2.50.
@@ -409,9 +415,17 @@
 
 ---
 
-## Fatia 7.2: Sizing - Constraints e Win Probability
+## Fatia 7.2: Sizing - Constraints e Win Probability ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/sizing/sizer.go`
+
+**Notas de Implementação:**
+- Sizer struct com SizerConfig injetado (KellyFraction, MinPosition, MaxBankrollPct)
+- SizingInput: EntryPrice, WinProb, Bankroll, SafetyMargin
+- SizingOutput: PositionSize, RawKelly, BankrollPct, Reason
+- Constraints aplicados: min $1, max 20% bankroll, round down to cents
+- EstimateWinProbability usa safety margin para boost/penalty
+- Posição abaixo do mínimo após constraints retorna 0 (below_minimum)
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Position nunca excede 20% do bankroll, mínimo $1.
