@@ -372,9 +372,16 @@
 
 ---
 
-## Fatia 6.3: Scanner - Scan Single Platform
+## Fatia 6.3: Scanner - Scan Single Platform ✅ CONCLUÍDA
 **Risco de Contexto:** Médio
 **Arquivos Esperados:** `internal/scanner/scanner.go`
+
+**Notas de Implementação:**
+- Scanner struct com EligibilityFilter injetado
+- Scan(platform) lista markets, filtra por elegibilidade, parseia títulos
+- EligibleMarket contém Market, ParsedMarket, Probability e BetSide
+- Mercados elegíveis mas não parseáveis (políticos, esportes) são ignorados silenciosamente
+- Testes com MockPlatform validam comportamento completo
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Scan Polymarket retorna mercados elegíveis (pode ser 0 ou mais).
