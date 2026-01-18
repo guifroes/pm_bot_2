@@ -329,9 +329,16 @@
 
 # FASE 6: ESCANEAR MERCADOS ELEGÍVEIS
 
-## Fatia 6.1: Scanner - Parser de Títulos
+## Fatia 6.1: Scanner - Parser de Títulos ✅ CONCLUÍDA
 **Risco de Contexto:** Médio
 **Arquivos Esperados:** `internal/scanner/parser.go`
+
+**Notas de Implementação:**
+- ParsedMarket struct com Asset, Strike e Direction
+- Suporte para assets: Bitcoin/BTC, Ethereum/ETH, Solana/SOL, S&P 500/SPY
+- Suporte para formatos de preço: $100,000, $100k, 100000
+- Direções: above/over/at or above → "above", below/under/at or below → "below"
+- Regex especial para remover "500" do "S&P 500" antes de extrair strike
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Parse "Will Bitcoin be above $100,000 on Jan 18?" → `{Asset: "BTC", Strike: 100000, Direction: "above"}`
