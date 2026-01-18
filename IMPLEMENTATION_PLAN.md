@@ -506,9 +506,15 @@
 
 # FASE 9: MONITORAR E SAIR DA POSIÇÃO
 
-## Fatia 9.1: Position Monitor - Stop Loss
+## Fatia 9.1: Position Monitor - Stop Loss ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/position/monitor.go`
+
+**Notas de Implementação:**
+- Monitor struct com stopLossPercent injetado
+- CheckStopLoss retorna true se currentPrice < threshold
+- Threshold = entry_price * (1 - stop_loss_percent)
+- Usa comparação estrita (< não <=) para evitar trigger no exato threshold
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Position entry=0.90, current=0.76 (>15% loss) → trigger exit.
