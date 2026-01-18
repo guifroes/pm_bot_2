@@ -243,9 +243,15 @@
 
 ---
 
-## Fatia 4.4: Platform - Interface Comum + Rate Limiter
+## Fatia 4.4: Platform - Interface Comum + Rate Limiter ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/platform/platform.go`, `internal/platform/ratelimit.go`
+
+**Notas de Implementação:**
+- Interface Platform define métodos comuns: Name, ListMarkets, GetOrderBook, GetBalance, GetPositions
+- Token bucket rate limiter com Allow() (non-blocking) e Wait() (blocking)
+- Factory functions NewPolymarketRateLimiter() e NewKalshiRateLimiter() para rates predefinidos
+- Testes comportamentais incluem: burst, blocking, refill, concurrency
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Rate limiter bloqueia chamada excedente (100/min Poly, 30/min Kalshi).
