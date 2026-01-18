@@ -265,9 +265,15 @@
 
 # FASE 5: ANALISAR VOLATILIDADE DE UM ATIVO
 
-## Fatia 5.1: Volatility - Cálculo de Volatilidade Histórica
+## Fatia 5.1: Volatility - Cálculo de Volatilidade Histórica ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/volatility/calculator.go`
+
+**Notas de Implementação:**
+- Cálculo usa log returns para precisão estatística
+- Variância usa (n-1) para sample standard deviation
+- Crypto anualiza com sqrt(365), stocks com sqrt(252)
+- Retorna 0 para dados insuficientes (<2 preços)
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Dado array de preços, retorna volatilidade anualizada entre 0 e 2.
