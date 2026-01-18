@@ -54,7 +54,7 @@
 
 ---
 
-## Fatia 1.4: SQLite - Schema Completo
+## Fatia 1.4: SQLite - Schema Completo ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `migrations/002_core_tables.sql`
 

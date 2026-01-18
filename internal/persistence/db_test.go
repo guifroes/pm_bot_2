@@ -153,3 +153,56 @@ func TestRunMigrations_SkipsAppliedMigrations(t *testing.T) {
 		t.Errorf("expected version 2, got %d", version)
 	}
 }
+
+func TestFullSchema_AllTablesExist(t *testing.T) {
+	// This test uses the real migrations directory
+	tmpDir, err := os.MkdirTemp("", "persistence_test")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	db, err := OpenDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	// Run migrations from the actual migrations directory
+	// Note: This path assumes tests are run from project root
+	if err := RunMigrations(db, "../../migrations"); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+
+	// Expected tables from full schema
+	expectedTables := []string{
+		"schema_version",
+		"bankroll",
+		"positions",
+		"parameters",
+		"events",
+		"price_cache",
+		"price_history",
+		"api_log",
+	}
+
+	for _, table := range expectedTables {
+		var name string
+		err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&name)
+		if err != nil {
+			t.Errorf("table %s not found: %v", table, err)
+		}
+	}
+
+	// Verify default parameters were inserted
+	var probThreshold float64
+	err = db.QueryRow("SELECT value FROM parameters WHERE name = 'probability_threshold'").Scan(&probThreshold)
+	if err != nil {
+		t.Errorf("probability_threshold not found: %v", err)
+	}
+	if probThreshold != 0.80 {
+		t.Errorf("expected probability_threshold 0.80, got %f", probThreshold)
+	}
+}
