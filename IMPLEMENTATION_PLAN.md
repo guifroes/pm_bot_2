@@ -71,7 +71,7 @@
 
 # FASE 2: BUSCAR PREÇO DO BITCOIN (End-to-End Vertical)
 
-## Fatia 2.1: Binance - Fetch Preço Atual
+## Fatia 2.1: Binance - Fetch Preço Atual ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/datasource/binance/client.go`, `pkg/types/price.go`
 
