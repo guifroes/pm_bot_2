@@ -112,7 +112,7 @@
 
 ---
 
-## Fatia 2.4: Data Source - Aggregator + Symbol Mapper
+## Fatia 2.4: Data Source - Aggregator + Symbol Mapper ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/datasource/aggregator.go`, `internal/datasource/mapper.go`
 
