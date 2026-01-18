@@ -128,7 +128,7 @@
 
 # FASE 3: LISTAR MERCADOS DA POLYMARKET (End-to-End Vertical)
 
-## Fatia 3.1: Polymarket - Client Base + Auth
+## Fatia 3.1: Polymarket - Client Base + Auth ✅ CONCLUÍDA
 **Risco de Contexto:** Médio
 **Arquivos Esperados:** `internal/platform/polymarket/client.go`, `internal/platform/polymarket/auth.go`
 
