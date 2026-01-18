@@ -460,9 +460,17 @@
 
 ---
 
-## Fatia 8.2: Position Manager - Entry Flow (DRY-RUN)
+## Fatia 8.2: Position Manager - Entry Flow (DRY-RUN) ✅ CONCLUÍDA
 **Risco de Contexto:** Médio
 **Arquivos Esperados:** `internal/position/manager.go`
+
+**Notas de Implementação:**
+- Manager struct com dependencies injetadas (PositionRepo, BankrollRepo, VolatilityService, Sizer)
+- ProcessEntry flow completo: duplicate check → volatility analysis → sizing → persist → bankroll deduct
+- EntryResult retorna detalhes da operação (PositionID, PositionSize, Quantity, SkipReason)
+- Skip reasons definidos: duplicate, volatility_reject, volatility_risky, sizing_no_edge, sizing_below_minimum
+- Suporte para allowRisky flag (permite trades com safety margin entre 0.8 e 1.5)
+- Testes cobrem: dry-run entry, duplicate detection, volatility reject, sizing constraints, bankroll deduction
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Processar EligibleMarket → volatility OK → sizing → persist Position (sem ordem real).
