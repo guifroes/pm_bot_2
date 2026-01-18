@@ -185,9 +185,14 @@
 
 # FASE 4: LISTAR MERCADOS DA KALSHI (End-to-End Vertical)
 
-## Fatia 4.1: Kalshi - Client Base + Auth HMAC
+## Fatia 4.1: Kalshi - Client Base + Auth HMAC ✅ CONCLUÍDA
 **Risco de Contexto:** Médio
 **Arquivos Esperados:** `internal/platform/kalshi/client.go`, `internal/platform/kalshi/auth.go`
+
+**Notas de Implementação:**
+- Kalshi usa RSA-PSS (não HMAC) para assinatura com SHA256
+- Formato da mensagem: `timestamp + method + path` (path inclui `/trade-api/v2`)
+- Suporte para `KALSHI_PRIVATE_KEY` (conteúdo) e `KALSHI_PRIVATE_KEY_PATH` (arquivo)
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Request autenticado para Kalshi não retorna erro de auth.
