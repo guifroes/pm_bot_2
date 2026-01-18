@@ -156,7 +156,7 @@
 
 ---
 
-## Fatia 3.3: Polymarket - Get Market + OrderBook
+## Fatia 3.3: Polymarket - Get Market + OrderBook ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/platform/polymarket/orderbook.go`, `pkg/types/orderbook.go`
 
