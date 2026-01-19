@@ -526,9 +526,16 @@
 
 ---
 
-## Fatia 9.2: Position Monitor - Volatility Exit
+## Fatia 9.2: Position Monitor - Volatility Exit ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/position/monitor.go` (update)
+
+**Notas de Implementação:**
+- Threshold de saída: safety_margin < 0.8 (VolatilityExitThreshold)
+- Usa VolatilityAnalyzer interface existente (AnalyzeAsset)
+- Converte direction string para volatility.Direction
+- Comparação estrita (< não <=) para evitar trigger no exato threshold
+- Testes cobrem: low margin, good margin, valid margin, exact threshold, just below, negative, error, direction below
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Safety margin atual < 0.8 → trigger volatility exit.

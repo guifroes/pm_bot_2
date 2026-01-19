@@ -1,9 +1,12 @@
 package position
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"prediction-bot/internal/persistence"
+	"prediction-bot/internal/volatility"
 )
 
 func TestCheckStopLoss_TriggerExit(t *testing.T) {
@@ -138,5 +141,204 @@ func TestCheckStopLoss_VariousStopLossPercents(t *testing.T) {
 					tt.entryPrice, tt.currentPrice, threshold, tt.expectTrigger, triggered)
 			}
 		})
+	}
+}
+
+// MockVolatilityAnalyzer implements the VolatilityAnalyzer interface for testing.
+type MockVolatilityAnalyzer struct {
+	safetyMargin float64
+	err          error
+}
+
+func (m *MockVolatilityAnalyzer) AnalyzeAsset(asset string, strikePrice float64, direction volatility.Direction, timeToClose time.Duration) (volatility.ServiceResult, error) {
+	if m.err != nil {
+		return volatility.ServiceResult{}, m.err
+	}
+	return volatility.ServiceResult{
+		SafetyMargin: m.safetyMargin,
+	}, nil
+}
+
+func TestCheckVolatilityExit_TriggerOnLowSafetyMargin(t *testing.T) {
+	// Safety margin atual < 0.8 → trigger volatility exit
+	// Position has strike $100k, direction "above", but volatility increased
+	// making current safety margin 0.6 < 0.8 → trigger exit
+
+	monitor := NewMonitor(0.15)
+	mockAnalyzer := &MockVolatilityAnalyzer{safetyMargin: 0.6, err: nil}
+
+	position := &persistence.Position{
+		ID:        1,
+		Asset:     "BTC",
+		Strike:    100000,
+		Direction: "above",
+		Status:    "open",
+	}
+
+	triggered, err := monitor.CheckVolatilityExit(position, mockAnalyzer, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CheckVolatilityExit returned error: %v", err)
+	}
+	if !triggered {
+		t.Errorf("CheckVolatilityExit: expected true (trigger exit) for safety_margin=0.6, got false")
+	}
+}
+
+func TestCheckVolatilityExit_NoTriggerOnGoodSafetyMargin(t *testing.T) {
+	// Safety margin atual >= 0.8 → no trigger
+	// Position has safety margin 1.2 (risky but acceptable) → no exit
+
+	monitor := NewMonitor(0.15)
+	mockAnalyzer := &MockVolatilityAnalyzer{safetyMargin: 1.2, err: nil}
+
+	position := &persistence.Position{
+		ID:        1,
+		Asset:     "BTC",
+		Strike:    100000,
+		Direction: "above",
+		Status:    "open",
+	}
+
+	triggered, err := monitor.CheckVolatilityExit(position, mockAnalyzer, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CheckVolatilityExit returned error: %v", err)
+	}
+	if triggered {
+		t.Errorf("CheckVolatilityExit: expected false (no trigger) for safety_margin=1.2, got true")
+	}
+}
+
+func TestCheckVolatilityExit_NoTriggerOnValidSafetyMargin(t *testing.T) {
+	// Safety margin atual >= 1.5 → definitely no trigger
+
+	monitor := NewMonitor(0.15)
+	mockAnalyzer := &MockVolatilityAnalyzer{safetyMargin: 2.5, err: nil}
+
+	position := &persistence.Position{
+		ID:        1,
+		Asset:     "ETH",
+		Strike:    3000,
+		Direction: "below",
+		Status:    "open",
+	}
+
+	triggered, err := monitor.CheckVolatilityExit(position, mockAnalyzer, 12*time.Hour)
+	if err != nil {
+		t.Fatalf("CheckVolatilityExit returned error: %v", err)
+	}
+	if triggered {
+		t.Errorf("CheckVolatilityExit: expected false (no trigger) for safety_margin=2.5, got true")
+	}
+}
+
+func TestCheckVolatilityExit_ExactlyAtThreshold(t *testing.T) {
+	// Safety margin exactly at 0.8 → should NOT trigger (use strict less-than)
+
+	monitor := NewMonitor(0.15)
+	mockAnalyzer := &MockVolatilityAnalyzer{safetyMargin: 0.8, err: nil}
+
+	position := &persistence.Position{
+		ID:        1,
+		Asset:     "BTC",
+		Strike:    100000,
+		Direction: "above",
+		Status:    "open",
+	}
+
+	triggered, err := monitor.CheckVolatilityExit(position, mockAnalyzer, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CheckVolatilityExit returned error: %v", err)
+	}
+	if triggered {
+		t.Errorf("CheckVolatilityExit: expected false at exact threshold (0.8), got true")
+	}
+}
+
+func TestCheckVolatilityExit_JustBelowThreshold(t *testing.T) {
+	// Safety margin just below 0.8 → trigger
+
+	monitor := NewMonitor(0.15)
+	mockAnalyzer := &MockVolatilityAnalyzer{safetyMargin: 0.79, err: nil}
+
+	position := &persistence.Position{
+		ID:        1,
+		Asset:     "BTC",
+		Strike:    100000,
+		Direction: "above",
+		Status:    "open",
+	}
+
+	triggered, err := monitor.CheckVolatilityExit(position, mockAnalyzer, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CheckVolatilityExit returned error: %v", err)
+	}
+	if !triggered {
+		t.Errorf("CheckVolatilityExit: expected true for safety_margin=0.79, got false")
+	}
+}
+
+func TestCheckVolatilityExit_NegativeSafetyMargin(t *testing.T) {
+	// Negative safety margin (on wrong side of strike) → trigger
+
+	monitor := NewMonitor(0.15)
+	mockAnalyzer := &MockVolatilityAnalyzer{safetyMargin: -0.5, err: nil}
+
+	position := &persistence.Position{
+		ID:        1,
+		Asset:     "BTC",
+		Strike:    100000,
+		Direction: "above",
+		Status:    "open",
+	}
+
+	triggered, err := monitor.CheckVolatilityExit(position, mockAnalyzer, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CheckVolatilityExit returned error: %v", err)
+	}
+	if !triggered {
+		t.Errorf("CheckVolatilityExit: expected true for negative safety_margin=-0.5, got false")
+	}
+}
+
+func TestCheckVolatilityExit_ErrorFromAnalyzer(t *testing.T) {
+	// Error from analyzer should be propagated
+
+	monitor := NewMonitor(0.15)
+	mockAnalyzer := &MockVolatilityAnalyzer{safetyMargin: 0, err: fmt.Errorf("failed to fetch price data")}
+
+	position := &persistence.Position{
+		ID:        1,
+		Asset:     "INVALID",
+		Strike:    100,
+		Direction: "above",
+		Status:    "open",
+	}
+
+	_, err := monitor.CheckVolatilityExit(position, mockAnalyzer, 24*time.Hour)
+	if err == nil {
+		t.Errorf("CheckVolatilityExit: expected error from analyzer, got nil")
+	}
+}
+
+func TestCheckVolatilityExit_DirectionBelow(t *testing.T) {
+	// Test that direction "below" is correctly converted
+
+	monitor := NewMonitor(0.15)
+	mockAnalyzer := &MockVolatilityAnalyzer{safetyMargin: 0.5, err: nil}
+
+	position := &persistence.Position{
+		ID:        1,
+		Asset:     "ETH",
+		Strike:    3000,
+		Direction: "below", // testing "below" direction
+		Status:    "open",
+	}
+
+	triggered, err := monitor.CheckVolatilityExit(position, mockAnalyzer, 12*time.Hour)
+	if err != nil {
+		t.Fatalf("CheckVolatilityExit returned error: %v", err)
+	}
+	if !triggered {
+		t.Errorf("CheckVolatilityExit: expected true for safety_margin=0.5, got false")
 	}
 }
