@@ -69,8 +69,8 @@ func TestClient_AuthenticatedRequest(t *testing.T) {
 	}
 
 	// Balance should be >= 0 (can be zero for new accounts)
-	if balance.Available < 0 {
-		t.Errorf("balance should be >= 0, got %f", balance.Available)
+	if balance < 0 {
+		t.Errorf("balance should be >= 0, got %f", balance)
 	}
 }
 

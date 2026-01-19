@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -304,4 +305,57 @@ func (b *Bot) RunMonitorCycle() error {
 		Msg("monitor cycle complete")
 
 	return nil
+}
+
+// Run starts the main bot loop with scan and monitor cycles.
+// It runs until the context is cancelled, executing:
+// - An immediate scan cycle on start
+// - Scan cycles at ScanInterval
+// - Monitor cycles at MonitorInterval
+//
+// Graceful shutdown is handled via context cancellation.
+func (b *Bot) Run(ctx context.Context) error {
+	log.Info().
+		Dur("scan_interval", b.config.ScanInterval).
+		Dur("monitor_interval", b.config.MonitorInterval).
+		Bool("dry_run", b.config.DryRun).
+		Int("platforms", len(b.platforms)).
+		Msg("bot starting")
+
+	// Run immediate scan cycle on start
+	if err := b.RunScanCycle(); err != nil {
+		log.Error().Err(err).Msg("initial scan cycle failed")
+	}
+
+	// Run immediate monitor cycle on start
+	if err := b.RunMonitorCycle(); err != nil {
+		log.Error().Err(err).Msg("initial monitor cycle failed")
+	}
+
+	// Create tickers for scan and monitor cycles
+	scanTicker := time.NewTicker(b.config.ScanInterval)
+	defer scanTicker.Stop()
+
+	monitorTicker := time.NewTicker(b.config.MonitorInterval)
+	defer monitorTicker.Stop()
+
+	log.Info().Msg("bot running, press Ctrl+C to stop")
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Msg("shutting down bot gracefully")
+			return nil
+
+		case <-scanTicker.C:
+			if err := b.RunScanCycle(); err != nil {
+				log.Error().Err(err).Msg("scan cycle failed")
+			}
+
+		case <-monitorTicker.C:
+			if err := b.RunMonitorCycle(); err != nil {
+				log.Error().Err(err).Msg("monitor cycle failed")
+			}
+		}
+	}
 }

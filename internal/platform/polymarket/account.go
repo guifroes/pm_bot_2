@@ -50,8 +50,8 @@ type jsonRPCError struct {
 	Message string `json:"message"`
 }
 
-// GetBalance retrieves the USDC balance for a wallet address on Polygon.
-func (c *Client) GetBalance(walletAddress string) (types.Balance, error) {
+// GetBalanceForWallet retrieves the USDC balance for a wallet address on Polygon.
+func (c *Client) GetBalanceForWallet(walletAddress string) (types.Balance, error) {
 	// Normalize address
 	address := strings.ToLower(strings.TrimPrefix(walletAddress, "0x"))
 	if len(address) != 40 {
@@ -124,6 +124,29 @@ func (c *Client) GetBalance(walletAddress string) (types.Balance, error) {
 		Amount:    amount,
 		Timestamp: time.Now(),
 	}, nil
+}
+
+// GetBalance implements platform.Platform interface.
+// Returns the USDC balance for the configured wallet address.
+func (c *Client) GetBalance() (float64, error) {
+	if c.creds.WalletAddress == "" {
+		return 0, fmt.Errorf("wallet address not configured (set POLYMARKET_WALLET_ADDRESS)")
+	}
+
+	balance, err := c.GetBalanceForWallet(c.creds.WalletAddress)
+	if err != nil {
+		return 0, err
+	}
+
+	return balance.Amount, nil
+}
+
+// GetPositions implements platform.Platform interface.
+// Returns current positions (placeholder - Polymarket positions require on-chain queries).
+func (c *Client) GetPositions() ([]types.Position, error) {
+	// Polymarket positions are stored on-chain and require subgraph queries.
+	// For now, return empty list. Full implementation requires GraphQL to Polymarket subgraph.
+	return []types.Position{}, nil
 }
 
 // parseUSDCBalance converts a hex string to a USDC amount (6 decimals).

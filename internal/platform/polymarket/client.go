@@ -25,6 +25,7 @@ func NewClient() (*Client, error) {
 	apiKey := os.Getenv("POLYMARKET_API_KEY")
 	apiSecret := os.Getenv("POLYMARKET_API_SECRET")
 	passphrase := os.Getenv("POLYMARKET_PASSPHRASE")
+	walletAddress := os.Getenv("POLYMARKET_WALLET_ADDRESS")
 
 	if apiKey == "" || apiSecret == "" || passphrase == "" {
 		return nil, fmt.Errorf("missing Polymarket credentials in environment")
@@ -35,9 +36,10 @@ func NewClient() (*Client, error) {
 			Timeout: 30 * time.Second,
 		},
 		creds: Credentials{
-			APIKey:     apiKey,
-			APISecret:  apiSecret,
-			Passphrase: passphrase,
+			APIKey:        apiKey,
+			APISecret:     apiSecret,
+			Passphrase:    passphrase,
+			WalletAddress: walletAddress,
 		},
 		baseURL: clobBaseURL,
 	}, nil
@@ -172,4 +174,9 @@ func (c *Client) GetServerTime() (int64, error) {
 	}
 
 	return timestamp, nil
+}
+
+// Name returns the platform identifier.
+func (c *Client) Name() string {
+	return "polymarket"
 }

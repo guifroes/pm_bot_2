@@ -5,7 +5,35 @@ import (
 	"testing"
 )
 
-func TestClient_GetBalance(t *testing.T) {
+func TestClient_GetBalanceDetails(t *testing.T) {
+	if !hasKalshiCredentials() {
+		t.Skip("KALSHI_API_KEY and KALSHI_PRIVATE_KEY (or KALSHI_PRIVATE_KEY_PATH) required for this test")
+	}
+
+	client, err := NewClient()
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	balance, err := client.GetBalanceDetails()
+	if err != nil {
+		t.Fatalf("GetBalanceDetails failed: %v", err)
+	}
+
+	// Balance should be >= 0 (can be zero for new accounts)
+	if balance.Available < 0 {
+		t.Errorf("available balance should be >= 0, got %f", balance.Available)
+	}
+
+	if balance.Reserved < 0 {
+		t.Errorf("reserved balance should be >= 0, got %f", balance.Reserved)
+	}
+
+	t.Logf("Balance: Available=$%.2f, Reserved=$%.2f, BonusCash=$%.2f",
+		balance.Available, balance.Reserved, balance.BonusCashBalance)
+}
+
+func TestClient_GetBalance_ImplementsPlatformInterface(t *testing.T) {
 	if !hasKalshiCredentials() {
 		t.Skip("KALSHI_API_KEY and KALSHI_PRIVATE_KEY (or KALSHI_PRIVATE_KEY_PATH) required for this test")
 	}
@@ -21,16 +49,11 @@ func TestClient_GetBalance(t *testing.T) {
 	}
 
 	// Balance should be >= 0 (can be zero for new accounts)
-	if balance.Available < 0 {
-		t.Errorf("available balance should be >= 0, got %f", balance.Available)
+	if balance < 0 {
+		t.Errorf("balance should be >= 0, got %f", balance)
 	}
 
-	if balance.Reserved < 0 {
-		t.Errorf("reserved balance should be >= 0, got %f", balance.Reserved)
-	}
-
-	t.Logf("Balance: Available=$%.2f, Reserved=$%.2f, BonusCash=$%.2f",
-		balance.Available, balance.Reserved, balance.BonusCashBalance)
+	t.Logf("Balance via Platform interface: $%.2f", balance)
 }
 
 func TestClient_GetPositions(t *testing.T) {

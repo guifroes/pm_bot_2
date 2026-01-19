@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestClient_GetBalance_ReturnsUSDCBalance(t *testing.T) {
+func TestClient_GetBalanceForWallet_ReturnsUSDCBalance(t *testing.T) {
 	// Skip if no wallet address is provided
 	walletAddress := os.Getenv("POLYMARKET_WALLET_ADDRESS")
 	if walletAddress == "" {
@@ -19,9 +19,9 @@ func TestClient_GetBalance_ReturnsUSDCBalance(t *testing.T) {
 		baseURL:    clobBaseURL,
 	}
 
-	balance, err := client.GetBalance(walletAddress)
+	balance, err := client.GetBalanceForWallet(walletAddress)
 	if err != nil {
-		t.Fatalf("GetBalance: %v", err)
+		t.Fatalf("GetBalanceForWallet: %v", err)
 	}
 
 	// Balance should be non-negative (can be 0)
@@ -42,7 +42,7 @@ func TestClient_GetBalance_ReturnsUSDCBalance(t *testing.T) {
 	t.Logf("Balance: %.6f %s on %s", balance.Amount, balance.Currency, balance.Platform)
 }
 
-func TestClient_GetBalance_WithKnownAddress(t *testing.T) {
+func TestClient_GetBalanceForWallet_WithKnownAddress(t *testing.T) {
 	// Test with a known Polygon address to verify the API works
 	// This is a public address with known USDC activity
 	client := &Client{
@@ -54,9 +54,9 @@ func TestClient_GetBalance_WithKnownAddress(t *testing.T) {
 	// We use a public address for testing - no private keys involved
 	testAddress := "0x0000000000000000000000000000000000000000"
 
-	balance, err := client.GetBalance(testAddress)
+	balance, err := client.GetBalanceForWallet(testAddress)
 	if err != nil {
-		t.Fatalf("GetBalance: %v", err)
+		t.Fatalf("GetBalanceForWallet: %v", err)
 	}
 
 	// Balance should be >= 0 (zero address likely has 0)
@@ -69,4 +69,32 @@ func TestClient_GetBalance_WithKnownAddress(t *testing.T) {
 	}
 
 	t.Logf("Zero address balance: %.6f %s", balance.Amount, balance.Currency)
+}
+
+func TestClient_GetBalance_ImplementsPlatformInterface(t *testing.T) {
+	// Skip if wallet address is not set
+	walletAddress := os.Getenv("POLYMARKET_WALLET_ADDRESS")
+	if walletAddress == "" {
+		t.Skip("POLYMARKET_WALLET_ADDRESS not set - skipping real balance test")
+	}
+
+	client := &Client{
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		baseURL:    clobBaseURL,
+		creds: Credentials{
+			WalletAddress: walletAddress,
+		},
+	}
+
+	balance, err := client.GetBalance()
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+
+	// Balance should be non-negative (can be 0)
+	if balance < 0 {
+		t.Errorf("balance should not be negative, got %f", balance)
+	}
+
+	t.Logf("Balance via Platform interface: %.6f", balance)
 }

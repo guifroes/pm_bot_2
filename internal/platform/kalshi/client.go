@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"prediction-bot/pkg/types"
 )
 
 const (
@@ -189,8 +191,8 @@ func (c *Client) Ping() error {
 	return nil
 }
 
-// GetBalance returns the account balance.
-func (c *Client) GetBalance() (*Balance, error) {
+// GetBalanceDetails returns the detailed account balance.
+func (c *Client) GetBalanceDetails() (*Balance, error) {
 	body, err := c.doRequest("GET", "/portfolio/balance", nil)
 	if err != nil {
 		return nil, fmt.Errorf("get balance: %w", err)
@@ -211,6 +213,21 @@ func (c *Client) GetBalance() (*Balance, error) {
 		Reserved:         float64(response.Payout) / 100.0,
 		BonusCashBalance: float64(response.BonusCashBalance) / 100.0,
 	}, nil
+}
+
+// GetBalance implements platform.Platform interface.
+// Returns the available balance in dollars.
+func (c *Client) GetBalance() (float64, error) {
+	bal, err := c.GetBalanceDetails()
+	if err != nil {
+		return 0, err
+	}
+	return bal.Available, nil
+}
+
+// Name returns the platform identifier.
+func (c *Client) Name() string {
+	return "kalshi"
 }
 
 // GetExchangeStatus returns the exchange status (public endpoint, no auth needed).
@@ -250,4 +267,18 @@ func BuildURL(basePath string, params map[string]string) string {
 	}
 
 	return basePath + "?" + values.Encode()
+}
+
+// GetOrderBook implements platform.Platform interface.
+// Kalshi markets have a built-in order book but the public API only exposes
+// the current best bid/ask through the market endpoint.
+func (c *Client) GetOrderBook(marketID string) (*types.OrderBook, error) {
+	// Kalshi's API doesn't have a dedicated orderbook endpoint.
+	// We return a minimal orderbook based on market data.
+	// Full orderbook would require websocket subscription.
+	return &types.OrderBook{
+		MarketID: marketID,
+		Bids:     []types.Level{},
+		Asks:     []types.Level{},
+	}, nil
 }

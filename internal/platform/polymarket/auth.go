@@ -11,9 +11,10 @@ import (
 
 // Credentials holds Polymarket API credentials.
 type Credentials struct {
-	APIKey     string
-	APISecret  string
-	Passphrase string
+	APIKey        string
+	APISecret     string
+	Passphrase    string
+	WalletAddress string
 }
 
 // generateL2Signature generates the HMAC signature for L2 API requests.

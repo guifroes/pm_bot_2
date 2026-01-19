@@ -614,9 +614,19 @@
 
 ---
 
-## Fatia 10.3: Bot - Main Loop Contínuo
+## Fatia 10.3: Bot - Main Loop Contínuo ✅ CONCLUÍDA
 **Risco de Contexto:** Médio
 **Arquivos Esperados:** `internal/bot/bot.go`, `cmd/bot/main.go`
+
+**Notas de Implementação:**
+- Run(ctx context.Context) implementado com scan e monitor cycles
+- Immediate scan e monitor na inicialização
+- Tickers configuráveis para ScanInterval e MonitorInterval
+- Graceful shutdown via context cancellation
+- CLI com flags: --config, --dry-run, --verbose
+- Signal handling para SIGINT/SIGTERM
+- Logging estruturado com zerolog console output
+- Platform interface implementada corretamente em Polymarket e Kalshi clients
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** `go run cmd/bot/main.go --dry-run` roda por 30s e para gracefully.
