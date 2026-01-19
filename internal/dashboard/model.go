@@ -19,25 +19,31 @@ type quitMsg struct{}
 type dataUpdateMsg struct {
 	bankrolls []views.BankrollData
 	positions []views.PositionData
+	stats     views.StatsData
 }
 
 // DataProvider defines the interface for fetching dashboard data.
 type DataProvider interface {
 	GetBankrolls() ([]views.BankrollData, error)
 	GetPositions() ([]views.PositionData, error)
+	GetStats() (views.StatsData, error)
 }
 
 // Model represents the dashboard state
 type Model struct {
 	lastUpdate    time.Time
 	quitting      bool
+	paused        bool
 	width         int
 	height        int
 	dryRun        bool
 	bankrolls     []views.BankrollData
 	positions     []views.PositionData
+	stats         views.StatsData
 	bankrollView  *views.BankrollView
 	positionsView *views.PositionsView
+	statsView     *views.StatsView
+	keyMap        KeyMap
 	dataProvider  DataProvider
 	err           error
 }
@@ -47,11 +53,14 @@ func NewModel() Model {
 	return Model{
 		lastUpdate:    time.Now(),
 		quitting:      false,
+		paused:        false,
 		width:         80,
 		height:        24,
 		dryRun:        true,
 		bankrollView:  views.NewBankrollView(),
 		positionsView: views.NewPositionsView(),
+		statsView:     views.NewStatsView(),
+		keyMap:        DefaultKeyMap(),
 	}
 }
 
@@ -79,6 +88,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			// Manual refresh
 			return m, m.fetchDataCmd()
+		case "p":
+			// Toggle pause
+			m.paused = !m.paused
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -88,11 +101,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.lastUpdate = time.Time(msg)
+		if m.paused {
+			// Only tick, don't fetch data when paused
+			return m, tickCmd()
+		}
 		return m, tea.Batch(tickCmd(), m.fetchDataCmd())
 
 	case dataUpdateMsg:
 		m.bankrolls = msg.bankrolls
 		m.positions = msg.positions
+		m.stats = msg.stats
 		m.err = nil
 		return m, nil
 
@@ -130,15 +148,34 @@ func (m Model) View() string {
 	title := titleStyle.Render("Prediction Market Bot")
 	timestamp := timestampStyle.Render(fmt.Sprintf("Last Update: %s", m.lastUpdate.Format("15:04:05")))
 
-	// Status indicator
-	var statusText string
+	// Status indicators
+	var statusParts []string
+
+	// Mode indicator
 	if m.dryRun {
-		statusText = statusStyle.Render("[DRY-RUN]")
+		statusParts = append(statusParts, statusStyle.Render("[DRY-RUN]"))
 	} else {
-		statusText = lipgloss.NewStyle().
+		statusParts = append(statusParts, lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("196")).
-			Render("[LIVE]")
+			Render("[LIVE]"))
+	}
+
+	// Paused indicator
+	if m.paused {
+		pausedStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("214")). // Orange
+			Blink(true)
+		statusParts = append(statusParts, pausedStyle.Render("[PAUSED]"))
+	}
+
+	statusText := ""
+	for i, part := range statusParts {
+		if i > 0 {
+			statusText += " "
+		}
+		statusText += part
 	}
 
 	header := fmt.Sprintf("%s %s\n%s", title, statusText, timestamp)
@@ -155,11 +192,14 @@ func (m Model) View() string {
 	// Positions section
 	positionsSection := m.positionsView.Render(m.positions, sectionWidth)
 
-	// Help text
-	help := helpStyle.Render("Press 'q' to quit, 'r' to refresh")
+	// Stats section
+	statsSection := m.statsView.Render(m.stats, sectionWidth)
 
-	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n\n%s\n",
-		header, bankrollSection, positionsSection, help)
+	// Help text using keymap
+	help := helpStyle.Render(m.keyMap.HelpView())
+
+	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n",
+		header, bankrollSection, positionsSection, statsSection, help)
 }
 
 // tickCmd returns a command that sends a tick message after 1 second
@@ -178,10 +218,12 @@ func (m Model) fetchDataCmd() tea.Cmd {
 	return func() tea.Msg {
 		bankrolls, _ := m.dataProvider.GetBankrolls()
 		positions, _ := m.dataProvider.GetPositions()
+		stats, _ := m.dataProvider.GetStats()
 
 		return dataUpdateMsg{
 			bankrolls: bankrolls,
 			positions: positions,
+			stats:     stats,
 		}
 	}
 }

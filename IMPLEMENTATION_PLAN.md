@@ -755,9 +755,18 @@
 
 ---
 
-## Fatia 12.3: Dashboard - Seções Stats e Keyboard
+## Fatia 12.3: Dashboard - Seções Stats e Keyboard ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/dashboard/views/stats.go`, `internal/dashboard/keys.go`
+
+**Notas de Implementação:**
+- StatsView renderiza trades (wins/losses), win rate, total PnL, realized/unrealized PnL, max drawdown
+- Cores semânticas: verde para positivo, vermelho para negativo, laranja para warning
+- KeyMap com Quit (q/ctrl+c), Refresh (r), Pause (p)
+- Model atualizado com campo `paused` e toggle via tecla 'p'
+- DataProvider extendido com GetStats() para buscar estatísticas
+- PositionRepository extendido com GetClosed() para buscar trades fechados
+- Indicador [PAUSED] no header quando pausado
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Mostra stats (win rate, total PnL), Q para sair funciona.
@@ -873,7 +882,7 @@ Se falhar, NÃO avançar.
 | 9 | Monitorar e Sair | 3 | ✅ |
 | 10 | Bot Loop | 3 | ✅ |
 | 11 | Learning System | 3 | ✅ |
-| 12 | Dashboard | 3 | 🔄 |
+| 12 | Dashboard | 3 | ✅ |
 | 13 | Live Trading | 2 | ⚠️ |
 | 14 | Backtesting | 3 | |
 

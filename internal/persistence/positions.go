@@ -111,6 +111,25 @@ func (r *PositionRepository) GetOpen() ([]*Position, error) {
 	return r.scanPositions(rows)
 }
 
+// GetClosed retrieves all closed positions.
+func (r *PositionRepository) GetClosed() ([]*Position, error) {
+	rows, err := r.db.Query(`
+		SELECT id, platform, market_id, COALESCE(market_title, ''), COALESCE(asset, ''),
+			COALESCE(strike, 0), COALESCE(direction, ''), entry_price, exit_price,
+			quantity, side, status, entry_time, exit_time, exit_reason, realized_pnl,
+			COALESCE(safety_margin_at_entry, 0), COALESCE(volatility_at_entry, 0),
+			created_at, updated_at
+		FROM positions WHERE status = 'closed'
+		ORDER BY exit_time DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("get closed positions: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanPositions(rows)
+}
+
 // GetOpenByPlatform retrieves all open positions for a specific platform.
 func (r *PositionRepository) GetOpenByPlatform(platform string) ([]*Position, error) {
 	rows, err := r.db.Query(`

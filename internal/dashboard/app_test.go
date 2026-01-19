@@ -85,6 +85,7 @@ func TestModelUpdate_QuitMessage(t *testing.T) {
 type MockDataProvider struct {
 	bankrolls []views.BankrollData
 	positions []views.PositionData
+	stats     views.StatsData
 }
 
 func (m *MockDataProvider) GetBankrolls() ([]views.BankrollData, error) {
@@ -93,6 +94,10 @@ func (m *MockDataProvider) GetBankrolls() ([]views.BankrollData, error) {
 
 func (m *MockDataProvider) GetPositions() ([]views.PositionData, error) {
 	return m.positions, nil
+}
+
+func (m *MockDataProvider) GetStats() (views.StatsData, error) {
+	return m.stats, nil
 }
 
 func TestModelViewShowsBankroll(t *testing.T) {
