@@ -780,9 +780,18 @@
 
 # FASE 13: LIVE TRADING (CUIDADO!)
 
-## Fatia 13.1: Polymarket - Place Order REAL
+## Fatia 13.1: Polymarket - Place Order REAL ✅ CONCLUÍDA
 **Risco de Contexto:** ALTO ⚠️ - REQUER REVISÃO MANUAL
 **Arquivos Esperados:** `internal/platform/polymarket/orders.go` (update)
+
+**Notas de Implementação:**
+- PlaceOrder(order, dryRun=false) submete ordem ao endpoint POST /order da CLOB API
+- Payload construído com tokenID, price, size, side, orderType, makerAmount, takerAmount
+- Logs WARN antes de cada ordem, DEBUG para payload, INFO para sucesso, ERROR para falhas
+- Flag --live no main.go ativa live trading (override de --dry-run)
+- Confirmação interativa obrigatória antes de ativar live mode
+- Debug logging automático em live mode para auditoria completa
+- Testes validam: payload structure, credential validation, API error handling
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Com `--live` flag, ordem é submetida à CLOB API real.
@@ -883,7 +892,7 @@ Se falhar, NÃO avançar.
 | 10 | Bot Loop | 3 | ✅ |
 | 11 | Learning System | 3 | ✅ |
 | 12 | Dashboard | 3 | ✅ |
-| 13 | Live Trading | 2 | ⚠️ |
+| 13 | Live Trading | 2 (1/2) | ⚠️ 13.1✅ |
 | 14 | Backtesting | 3 | |
 
 **Total: 44 micro-fatias**

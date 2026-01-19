@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,22 +31,38 @@ func main() {
 	// Parse CLI flags
 	configPath := flag.String("config", "config/config.yaml", "Path to config file")
 	dryRun := flag.Bool("dry-run", true, "Run in dry-run mode (no real orders)")
+	liveMode := flag.Bool("live", false, "Enable LIVE TRADING (REAL MONEY!) - requires confirmation")
 	verbose := flag.Bool("verbose", false, "Enable verbose logging")
 	dashboardMode := flag.Bool("dashboard", false, "Run with terminal dashboard UI")
 	flag.Parse()
 
+	// Determine if we're in dry-run mode
+	// --live flag overrides --dry-run
+	isDryRun := *dryRun && !*liveMode
+
 	// Setup logging
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	if *verbose {
+	if *verbose || *liveMode {
+		// Always enable debug logging in live mode for full audit trail
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	} else {
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
+	// If live mode is requested, require explicit confirmation
+	if *liveMode {
+		if !confirmLiveTrading() {
+			log.Info().Msg("Live trading cancelled by user")
+			os.Exit(0)
+		}
+		log.Warn().Msg("⚠️  LIVE TRADING MODE ACTIVATED - REAL MONEY WILL BE USED ⚠️")
+	}
+
 	log.Info().
 		Str("config", *configPath).
-		Bool("dry_run", *dryRun).
+		Bool("dry_run", isDryRun).
+		Bool("live_mode", *liveMode).
 		Bool("verbose", *verbose).
 		Msg("Bot starting...")
 
@@ -139,7 +158,7 @@ func main() {
 
 	// Create bot config
 	botConfig := bot.BotConfig{
-		DryRun:          *dryRun,
+		DryRun:          isDryRun,
 		ScanInterval:    time.Duration(cfg.Scan.IntervalSeconds) * time.Second,
 		MonitorInterval: 5 * time.Second,
 	}
@@ -164,7 +183,7 @@ func main() {
 	}()
 
 	log.Info().
-		Bool("dry_run", *dryRun).
+		Bool("dry_run", isDryRun).
 		Int("platforms", len(platforms)).
 		Bool("dashboard", *dashboardMode).
 		Msg("Starting bot main loop")
@@ -188,4 +207,34 @@ func main() {
 	}
 
 	log.Info().Msg("Bot stopped gracefully")
+}
+
+// confirmLiveTrading prompts the user to confirm they want to use live trading.
+// This adds an extra layer of protection against accidentally trading with real money.
+func confirmLiveTrading() bool {
+	fmt.Println()
+	fmt.Println("╔════════════════════════════════════════════════════════════════════════════╗")
+	fmt.Println("║                         ⚠️  WARNING: LIVE TRADING ⚠️                         ║")
+	fmt.Println("╠════════════════════════════════════════════════════════════════════════════╣")
+	fmt.Println("║ You are about to enable LIVE TRADING mode.                                ║")
+	fmt.Println("║ This will place REAL orders with REAL money on prediction markets.        ║")
+	fmt.Println("║                                                                            ║")
+	fmt.Println("║ Please ensure you have:                                                    ║")
+	fmt.Println("║   1. Tested thoroughly in dry-run mode                                     ║")
+	fmt.Println("║   2. Set appropriate bankroll limits in config                             ║")
+	fmt.Println("║   3. Verified your API credentials are correct                             ║")
+	fmt.Println("║   4. Understood the risks involved in automated trading                    ║")
+	fmt.Println("║                                                                            ║")
+	fmt.Println("║ Type 'yes' to confirm, or anything else to abort:                          ║")
+	fmt.Println("╚════════════════════════════════════════════════════════════════════════════╝")
+	fmt.Print("\n> ")
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	return response == "yes"
 }
