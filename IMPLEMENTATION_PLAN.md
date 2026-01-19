@@ -547,9 +547,16 @@
 
 ---
 
-## Fatia 9.3: Position Manager - Execute Exit (DRY-RUN)
+## Fatia 9.3: Position Manager - Execute Exit (DRY-RUN) ✅ CONCLUÍDA
 **Risco de Contexto:** Médio
 **Arquivos Esperados:** `internal/position/manager.go` (update)
+
+**Notas de Implementação:**
+- Exit reasons definidos: stop_loss, volatility_exit, market_resolved, manual_exit
+- ExitResult struct com PositionID, ExitPrice, ExitReason, RealizedPnL, EntryPrice, Quantity
+- PnL calculado: (exitPrice - entryPrice) * quantity
+- Exit proceeds adicionados ao bankroll: exitPrice * quantity
+- Testes cobrem: stop loss exit, volatility exit, winning trade, position not found, already closed
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Exit em dryRun calcula PnL e atualiza position no DB.

@@ -499,3 +499,317 @@ func TestProcessEntryAllowsRisky(t *testing.T) {
 		t.Fatalf("Expected risky trade to be allowed, got skipped: %s", result.SkipReason)
 	}
 }
+
+// TestExecuteExitDryRunStopLoss tests exiting a position due to stop loss in dry-run mode.
+func TestExecuteExitDryRunStopLoss(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Initialize bankroll
+	bankrollRepo := persistence.NewBankrollRepository(db)
+	err := bankrollRepo.Initialize("polymarket", 50.0)
+	if err != nil {
+		t.Fatalf("Failed to initialize bankroll: %v", err)
+	}
+
+	// Deduct position cost from bankroll (simulating entry)
+	err = bankrollRepo.AddToBalance("polymarket", -9.0) // $9 position (10 contracts * $0.90)
+	if err != nil {
+		t.Fatalf("Failed to deduct from bankroll: %v", err)
+	}
+
+	positionRepo := persistence.NewPositionRepository(db)
+
+	// Create an open position
+	positionID, err := positionRepo.Create(&persistence.Position{
+		Platform:            "polymarket",
+		MarketID:            "test-market-exit-1",
+		MarketTitle:         "Will Bitcoin be above $95,000 on Jan 20?",
+		Asset:               "BTC",
+		Strike:              95000.0,
+		Direction:           "above",
+		EntryPrice:          0.90,
+		Quantity:            10.0,
+		Side:                "YES",
+		Status:              "open",
+		SafetyMarginAtEntry: 1.91,
+		VolatilityAtEntry:   0.5,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create position: %v", err)
+	}
+
+	mockVolatility := &MockVolatilityService{}
+	sizerConfig := sizing.SizerConfig{
+		KellyFraction:  0.25,
+		MinPosition:    1.0,
+		MaxBankrollPct: 0.20,
+	}
+	sizer := sizing.NewSizer(sizerConfig)
+
+	manager := NewManager(positionRepo, bankrollRepo, mockVolatility, sizer)
+
+	// Execute exit at a loss (stop loss triggered at $0.75)
+	exitPrice := 0.75
+	result, err := manager.ExecuteExit(positionID, exitPrice, ExitReasonStopLoss, true)
+	if err != nil {
+		t.Fatalf("ExecuteExit failed: %v", err)
+	}
+
+	// Verify exit result
+	if result.PositionID != positionID {
+		t.Errorf("Expected position ID %d, got %d", positionID, result.PositionID)
+	}
+	if result.ExitPrice != exitPrice {
+		t.Errorf("Expected exit price %f, got %f", exitPrice, result.ExitPrice)
+	}
+	if result.ExitReason != ExitReasonStopLoss {
+		t.Errorf("Expected exit reason '%s', got '%s'", ExitReasonStopLoss, result.ExitReason)
+	}
+
+	// Calculate expected PnL: (exitPrice - entryPrice) * quantity = (0.75 - 0.90) * 10 = -1.50
+	expectedPnL := (exitPrice - 0.90) * 10.0
+	if result.RealizedPnL < expectedPnL-0.01 || result.RealizedPnL > expectedPnL+0.01 {
+		t.Errorf("Expected PnL ~%.2f, got %.2f", expectedPnL, result.RealizedPnL)
+	}
+
+	// Verify position is closed in database
+	pos, err := positionRepo.GetByID(positionID)
+	if err != nil {
+		t.Fatalf("Failed to get position: %v", err)
+	}
+	if pos.Status != "closed" {
+		t.Errorf("Expected status 'closed', got '%s'", pos.Status)
+	}
+	if pos.ExitPrice == nil || *pos.ExitPrice != exitPrice {
+		t.Errorf("Expected exit price %f, got %v", exitPrice, pos.ExitPrice)
+	}
+	if pos.ExitReason == nil || *pos.ExitReason != ExitReasonStopLoss {
+		t.Errorf("Expected exit reason '%s', got %v", ExitReasonStopLoss, pos.ExitReason)
+	}
+
+	// Verify bankroll was updated: original 41 + exit value (0.75 * 10) = 41 + 7.5 = 48.5
+	// PnL is negative so total bankroll decreases
+	bankroll, err := bankrollRepo.Get("polymarket")
+	if err != nil {
+		t.Fatalf("Failed to get bankroll: %v", err)
+	}
+	// 50 - 9 (entry) + 7.5 (exit proceeds) = 48.5
+	expectedBankroll := 50.0 - 9.0 + (exitPrice * 10.0)
+	if bankroll.CurrentAmount < expectedBankroll-0.01 || bankroll.CurrentAmount > expectedBankroll+0.01 {
+		t.Errorf("Expected bankroll ~%.2f, got %.2f", expectedBankroll, bankroll.CurrentAmount)
+	}
+}
+
+// TestExecuteExitDryRunVolatility tests exiting a position due to volatility in dry-run mode.
+func TestExecuteExitDryRunVolatility(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	bankrollRepo := persistence.NewBankrollRepository(db)
+	err := bankrollRepo.Initialize("polymarket", 50.0)
+	if err != nil {
+		t.Fatalf("Failed to initialize bankroll: %v", err)
+	}
+
+	// Deduct position cost from bankroll
+	err = bankrollRepo.AddToBalance("polymarket", -9.0)
+	if err != nil {
+		t.Fatalf("Failed to deduct from bankroll: %v", err)
+	}
+
+	positionRepo := persistence.NewPositionRepository(db)
+
+	positionID, err := positionRepo.Create(&persistence.Position{
+		Platform:            "polymarket",
+		MarketID:            "test-market-exit-2",
+		MarketTitle:         "Will Bitcoin be above $95,000 on Jan 20?",
+		Asset:               "BTC",
+		Strike:              95000.0,
+		Direction:           "above",
+		EntryPrice:          0.90,
+		Quantity:            10.0,
+		Side:                "YES",
+		Status:              "open",
+		SafetyMarginAtEntry: 1.91,
+		VolatilityAtEntry:   0.5,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create position: %v", err)
+	}
+
+	mockVolatility := &MockVolatilityService{}
+	sizerConfig := sizing.SizerConfig{
+		KellyFraction:  0.25,
+		MinPosition:    1.0,
+		MaxBankrollPct: 0.20,
+	}
+	sizer := sizing.NewSizer(sizerConfig)
+
+	manager := NewManager(positionRepo, bankrollRepo, mockVolatility, sizer)
+
+	// Exit at current price (slight loss due to volatility concerns)
+	exitPrice := 0.88
+	result, err := manager.ExecuteExit(positionID, exitPrice, ExitReasonVolatility, true)
+	if err != nil {
+		t.Fatalf("ExecuteExit failed: %v", err)
+	}
+
+	if result.ExitReason != ExitReasonVolatility {
+		t.Errorf("Expected exit reason '%s', got '%s'", ExitReasonVolatility, result.ExitReason)
+	}
+
+	// Verify position is closed
+	pos, err := positionRepo.GetByID(positionID)
+	if err != nil {
+		t.Fatalf("Failed to get position: %v", err)
+	}
+	if pos.Status != "closed" {
+		t.Errorf("Expected status 'closed', got '%s'", pos.Status)
+	}
+}
+
+// TestExecuteExitDryRunWin tests exiting a winning position (market resolved).
+func TestExecuteExitDryRunWin(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	bankrollRepo := persistence.NewBankrollRepository(db)
+	err := bankrollRepo.Initialize("polymarket", 50.0)
+	if err != nil {
+		t.Fatalf("Failed to initialize bankroll: %v", err)
+	}
+
+	// Deduct position cost from bankroll
+	err = bankrollRepo.AddToBalance("polymarket", -9.0) // Entry: 10 * 0.90 = $9
+	if err != nil {
+		t.Fatalf("Failed to deduct from bankroll: %v", err)
+	}
+
+	positionRepo := persistence.NewPositionRepository(db)
+
+	positionID, err := positionRepo.Create(&persistence.Position{
+		Platform:            "polymarket",
+		MarketID:            "test-market-exit-3",
+		MarketTitle:         "Will Bitcoin be above $95,000 on Jan 20?",
+		Asset:               "BTC",
+		Strike:              95000.0,
+		Direction:           "above",
+		EntryPrice:          0.90,
+		Quantity:            10.0,
+		Side:                "YES",
+		Status:              "open",
+		SafetyMarginAtEntry: 1.91,
+		VolatilityAtEntry:   0.5,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create position: %v", err)
+	}
+
+	mockVolatility := &MockVolatilityService{}
+	sizerConfig := sizing.SizerConfig{
+		KellyFraction:  0.25,
+		MinPosition:    1.0,
+		MaxBankrollPct: 0.20,
+	}
+	sizer := sizing.NewSizer(sizerConfig)
+
+	manager := NewManager(positionRepo, bankrollRepo, mockVolatility, sizer)
+
+	// Market resolved YES, exit at $1.00
+	exitPrice := 1.0
+	result, err := manager.ExecuteExit(positionID, exitPrice, ExitReasonResolved, true)
+	if err != nil {
+		t.Fatalf("ExecuteExit failed: %v", err)
+	}
+
+	// Calculate expected PnL: (1.00 - 0.90) * 10 = $1.00 profit
+	expectedPnL := (exitPrice - 0.90) * 10.0
+	if result.RealizedPnL < expectedPnL-0.01 || result.RealizedPnL > expectedPnL+0.01 {
+		t.Errorf("Expected PnL ~%.2f, got %.2f", expectedPnL, result.RealizedPnL)
+	}
+
+	// Verify bankroll was updated: 41 + 10 (exit proceeds) = 51
+	bankroll, err := bankrollRepo.Get("polymarket")
+	if err != nil {
+		t.Fatalf("Failed to get bankroll: %v", err)
+	}
+	expectedBankroll := 50.0 - 9.0 + (exitPrice * 10.0)
+	if bankroll.CurrentAmount < expectedBankroll-0.01 || bankroll.CurrentAmount > expectedBankroll+0.01 {
+		t.Errorf("Expected bankroll ~%.2f, got %.2f", expectedBankroll, bankroll.CurrentAmount)
+	}
+}
+
+// TestExecuteExitPositionNotFound tests exiting a non-existent position.
+func TestExecuteExitPositionNotFound(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	bankrollRepo := persistence.NewBankrollRepository(db)
+	positionRepo := persistence.NewPositionRepository(db)
+
+	mockVolatility := &MockVolatilityService{}
+	sizerConfig := sizing.SizerConfig{
+		KellyFraction:  0.25,
+		MinPosition:    1.0,
+		MaxBankrollPct: 0.20,
+	}
+	sizer := sizing.NewSizer(sizerConfig)
+
+	manager := NewManager(positionRepo, bankrollRepo, mockVolatility, sizer)
+
+	// Try to exit a position that doesn't exist
+	_, err := manager.ExecuteExit(99999, 0.50, ExitReasonStopLoss, true)
+	if err == nil {
+		t.Fatal("Expected error for non-existent position")
+	}
+}
+
+// TestExecuteExitAlreadyClosed tests that closing an already closed position returns an error.
+func TestExecuteExitAlreadyClosed(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	bankrollRepo := persistence.NewBankrollRepository(db)
+	err := bankrollRepo.Initialize("polymarket", 50.0)
+	if err != nil {
+		t.Fatalf("Failed to initialize bankroll: %v", err)
+	}
+
+	positionRepo := persistence.NewPositionRepository(db)
+
+	// Create a position and immediately close it
+	positionID, err := positionRepo.Create(&persistence.Position{
+		Platform:   "polymarket",
+		MarketID:   "test-market-exit-4",
+		EntryPrice: 0.90,
+		Quantity:   10.0,
+		Side:       "YES",
+		Status:     "open",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create position: %v", err)
+	}
+
+	// Close it via repository directly
+	err = positionRepo.Close(positionID, 0.95, "test_close", 0.5)
+	if err != nil {
+		t.Fatalf("Failed to close position: %v", err)
+	}
+
+	mockVolatility := &MockVolatilityService{}
+	sizerConfig := sizing.SizerConfig{
+		KellyFraction:  0.25,
+		MinPosition:    1.0,
+		MaxBankrollPct: 0.20,
+	}
+	sizer := sizing.NewSizer(sizerConfig)
+
+	manager := NewManager(positionRepo, bankrollRepo, mockVolatility, sizer)
+
+	// Try to exit the already closed position
+	_, err = manager.ExecuteExit(positionID, 0.50, ExitReasonStopLoss, true)
+	if err == nil {
+		t.Fatal("Expected error for already closed position")
+	}
+}

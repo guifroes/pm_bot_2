@@ -12,12 +12,20 @@ import (
 
 // Skip reasons for position entry.
 const (
-	SkipReasonDuplicate        = "duplicate_position"
-	SkipReasonVolatilityReject = "volatility_reject"
-	SkipReasonVolatilityRisky  = "volatility_risky"
-	SkipReasonSizingNoEdge     = "sizing_no_edge"
-	SkipReasonSizingTooSmall   = "sizing_below_minimum"
+	SkipReasonDuplicate         = "duplicate_position"
+	SkipReasonVolatilityReject  = "volatility_reject"
+	SkipReasonVolatilityRisky   = "volatility_risky"
+	SkipReasonSizingNoEdge      = "sizing_no_edge"
+	SkipReasonSizingTooSmall    = "sizing_below_minimum"
 	SkipReasonInsufficientFunds = "insufficient_funds"
+)
+
+// Exit reasons for position exit.
+const (
+	ExitReasonStopLoss   = "stop_loss"
+	ExitReasonVolatility = "volatility_exit"
+	ExitReasonResolved   = "market_resolved"
+	ExitReasonManual     = "manual_exit"
 )
 
 // VolatilityAnalyzer defines the interface for volatility analysis.
@@ -45,6 +53,22 @@ type EntryResult struct {
 	Volatility float64
 	// WinProbability is the estimated win probability.
 	WinProbability float64
+}
+
+// ExitResult contains the result of executing a position exit.
+type ExitResult struct {
+	// PositionID is the database ID of the closed position.
+	PositionID int64
+	// ExitPrice is the price at which the position was closed.
+	ExitPrice float64
+	// ExitReason explains why the position was closed.
+	ExitReason string
+	// RealizedPnL is the profit/loss from the trade.
+	RealizedPnL float64
+	// EntryPrice is the original entry price for reference.
+	EntryPrice float64
+	// Quantity is the number of contracts that were closed.
+	Quantity float64
 }
 
 // Manager handles position entry and management logic.
@@ -217,6 +241,61 @@ func (m *Manager) ProcessEntry(market scanner.EligibleMarket, dryRun bool) (Entr
 	result.SafetyMargin = volResult.SafetyMargin
 	result.Volatility = volResult.Volatility
 	result.WinProbability = winProb
+
+	return result, nil
+}
+
+// ExecuteExit closes a position and updates the database and bankroll.
+// If dryRun is true, the exit is recorded but no actual sell order is placed.
+//
+// Flow:
+// 1. Get position from database
+// 2. Verify position is still open
+// 3. Calculate realized PnL
+// 4. Update position status to closed
+// 5. Add exit proceeds to bankroll
+func (m *Manager) ExecuteExit(positionID int64, exitPrice float64, reason string, dryRun bool) (ExitResult, error) {
+	result := ExitResult{}
+
+	// Step 1: Get position from database
+	position, err := m.positionRepo.GetByID(positionID)
+	if err != nil {
+		return result, fmt.Errorf("get position: %w", err)
+	}
+	if position == nil {
+		return result, fmt.Errorf("position not found: %d", positionID)
+	}
+
+	// Step 2: Verify position is still open
+	if position.Status != "open" {
+		return result, fmt.Errorf("position already closed: %d", positionID)
+	}
+
+	// Step 3: Calculate realized PnL
+	// PnL = (exitPrice - entryPrice) * quantity
+	realizedPnL := (exitPrice - position.EntryPrice) * position.Quantity
+
+	// Step 4: Update position status to closed
+	err = m.positionRepo.Close(positionID, exitPrice, reason, realizedPnL)
+	if err != nil {
+		return result, fmt.Errorf("close position: %w", err)
+	}
+
+	// Step 5: Add exit proceeds to bankroll
+	// Exit proceeds = exitPrice * quantity
+	exitProceeds := exitPrice * position.Quantity
+	err = m.bankrollRepo.AddToBalance(position.Platform, exitProceeds)
+	if err != nil {
+		return result, fmt.Errorf("add to bankroll: %w", err)
+	}
+
+	// Populate result
+	result.PositionID = positionID
+	result.ExitPrice = exitPrice
+	result.ExitReason = reason
+	result.RealizedPnL = realizedPnL
+	result.EntryPrice = position.EntryPrice
+	result.Quantity = position.Quantity
 
 	return result, nil
 }
