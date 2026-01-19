@@ -663,9 +663,16 @@
 
 ---
 
-## Fatia 11.2: Learning - Análise por Segmento
+## Fatia 11.2: Learning - Análise por Segmento ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/learning/analyzer.go`
+
+**Notas de Implementação:**
+- SegmentStats struct com ParamName, RangeStart, RangeEnd, TradeCount, WinCount, LossCount, WinRate, TotalPnL, AvgPnL
+- Suporte para "probability" (segmentos 80-85, 85-90, 90-95, 95-100)
+- Suporte para "safety_margin" (segmentos 0.8-1.2, 1.2-1.5, 1.5-2.0, 2.0-2.5, 2.5+)
+- Retorna slice vazia para parâmetros desconhecidos ou outcomes vazios
+- Testes cobrem: probability segments, safety margin segments, empty outcomes, invalid param, single trade, total PnL
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Calcular win rate por segmento de probability.
