@@ -684,9 +684,18 @@
 
 ---
 
-## Fatia 11.3: Learning - Ajustar Parâmetros
+## Fatia 11.3: Learning - Ajustar Parâmetros ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/learning/adjuster.go`, `internal/persistence/parameters.go`
+
+**Notas de Implementação:**
+- Adjuster com SuggestAdjustment que move gradualmente (max 10%) para melhor segmento
+- Usa scoring baseado em win rate * (1 + normalized avg pnl) para escolher melhor segmento
+- Min 5 trades por segmento para ser considerado
+- ParametersRepository com GetCurrent, GetByName, Save, SaveWithReason, GetHistory, GetLastAdjustmentTime
+- Migration 003_parameter_history.sql para histórico de ajustes
+- Guardrails struct com CheckCanAdjust (min 20 trades, 24h cooldown) e CheckDrawdown (20% threshold)
+- DefaultParameters() para revert em caso de drawdown
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Ajuste gradual (max 10%) em direção ao melhor segmento.
