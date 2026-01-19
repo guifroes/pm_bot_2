@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"prediction-bot/internal/persistence"
 	"prediction-bot/internal/platform"
 	"prediction-bot/internal/position"
 	"prediction-bot/internal/scanner"
@@ -21,12 +22,20 @@ type BotConfig struct {
 	MonitorInterval time.Duration
 }
 
+// PriceProvider defines the interface for getting current market prices.
+type PriceProvider interface {
+	GetCurrentPrice(marketID string) (float64, error)
+}
+
 // Bot is the main trading bot that orchestrates scanning and position management.
 type Bot struct {
-	config    BotConfig
-	platforms []platform.Platform
-	scanner   *scanner.Scanner
-	manager   *position.Manager
+	config       BotConfig
+	platforms    []platform.Platform
+	scanner      *scanner.Scanner
+	manager      *position.Manager
+	monitor      *position.Monitor
+	volatility   position.VolatilityAnalyzer
+	positionRepo *persistence.PositionRepository
 }
 
 // NewBot creates a new trading bot with the given configuration and dependencies.
@@ -131,6 +140,168 @@ func (b *Bot) RunScanCycle() error {
 		Int("total_processed", totalProcessed).
 		Int("total_skipped", totalSkipped).
 		Msg("scan cycle complete")
+
+	return nil
+}
+
+// SetMonitor sets the position monitor for exit checks.
+func (b *Bot) SetMonitor(monitor *position.Monitor) {
+	b.monitor = monitor
+}
+
+// SetVolatilityAnalyzer sets the volatility analyzer for volatility exit checks.
+func (b *Bot) SetVolatilityAnalyzer(analyzer position.VolatilityAnalyzer) {
+	b.volatility = analyzer
+}
+
+// SetPositionRepo sets the position repository for fetching open positions.
+func (b *Bot) SetPositionRepo(repo *persistence.PositionRepository) {
+	b.positionRepo = repo
+}
+
+// RunMonitorCycle executes a single monitoring cycle for all open positions.
+// It checks each position for stop loss and volatility exit conditions.
+//
+// Flow:
+// 1. Fetch all open positions from database
+// 2. For each position:
+//    a. Get current market price
+//    b. Check stop loss condition
+//    c. Check volatility exit condition
+//    d. Execute exit if any condition is triggered
+func (b *Bot) RunMonitorCycle() error {
+	log.Info().Msg("starting monitor cycle")
+
+	// Fetch all open positions
+	if b.positionRepo == nil {
+		log.Warn().Msg("position repository not set, skipping monitor cycle")
+		return nil
+	}
+
+	positions, err := b.positionRepo.GetOpen()
+	if err != nil {
+		return fmt.Errorf("get open positions: %w", err)
+	}
+
+	if len(positions) == 0 {
+		log.Debug().Msg("no open positions to monitor")
+		return nil
+	}
+
+	log.Info().
+		Int("open_positions", len(positions)).
+		Msg("monitoring positions")
+
+	var totalExited int
+	var stopLossExits int
+	var volatilityExits int
+
+	for _, pos := range positions {
+		log.Debug().
+			Int64("position_id", pos.ID).
+			Str("platform", pos.Platform).
+			Str("market_id", pos.MarketID).
+			Float64("entry_price", pos.EntryPrice).
+			Msg("checking position")
+
+		// Find the platform for this position
+		var platformClient PriceProvider
+		for _, p := range b.platforms {
+			if provider, ok := p.(PriceProvider); ok && p.Name() == pos.Platform {
+				platformClient = provider
+				break
+			}
+		}
+
+		if platformClient == nil {
+			log.Warn().
+				Str("platform", pos.Platform).
+				Int64("position_id", pos.ID).
+				Msg("platform not found or does not support price lookup, skipping")
+			continue
+		}
+
+		// Get current price for the market
+		currentPrice, err := platformClient.GetCurrentPrice(pos.MarketID)
+		if err != nil {
+			log.Error().
+				Err(err).
+				Int64("position_id", pos.ID).
+				Str("market_id", pos.MarketID).
+				Msg("failed to get current price")
+			continue
+		}
+
+		// Check stop loss
+		if b.monitor != nil && b.monitor.CheckStopLoss(pos, currentPrice) {
+			log.Info().
+				Int64("position_id", pos.ID).
+				Float64("entry_price", pos.EntryPrice).
+				Float64("current_price", currentPrice).
+				Msg("stop loss triggered")
+
+			_, err := b.manager.ExecuteExit(pos.ID, currentPrice, position.ExitReasonStopLoss, b.config.DryRun)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Int64("position_id", pos.ID).
+					Msg("failed to execute stop loss exit")
+				continue
+			}
+
+			stopLossExits++
+			totalExited++
+			continue
+		}
+
+		// Check volatility exit
+		if b.monitor != nil && b.volatility != nil {
+			// Calculate time to close (use 24h as default if not available)
+			timeToClose := 24 * time.Hour
+
+			shouldExit, err := b.monitor.CheckVolatilityExit(pos, b.volatility, timeToClose)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Int64("position_id", pos.ID).
+					Msg("failed to check volatility exit")
+				continue
+			}
+
+			if shouldExit {
+				log.Info().
+					Int64("position_id", pos.ID).
+					Float64("entry_price", pos.EntryPrice).
+					Float64("current_price", currentPrice).
+					Msg("volatility exit triggered")
+
+				_, err := b.manager.ExecuteExit(pos.ID, currentPrice, position.ExitReasonVolatility, b.config.DryRun)
+				if err != nil {
+					log.Error().
+						Err(err).
+						Int64("position_id", pos.ID).
+						Msg("failed to execute volatility exit")
+					continue
+				}
+
+				volatilityExits++
+				totalExited++
+				continue
+			}
+		}
+
+		log.Debug().
+			Int64("position_id", pos.ID).
+			Float64("current_price", currentPrice).
+			Msg("position OK, no exit triggered")
+	}
+
+	log.Info().
+		Int("total_monitored", len(positions)).
+		Int("total_exited", totalExited).
+		Int("stop_loss_exits", stopLossExits).
+		Int("volatility_exits", volatilityExits).
+		Msg("monitor cycle complete")
 
 	return nil
 }

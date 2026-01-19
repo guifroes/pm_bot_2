@@ -393,6 +393,483 @@ func TestRunScanCycle_NoEligibleMarkets(t *testing.T) {
 	}
 }
 
+// TestRunMonitorCycle_ChecksAllOpenPositions tests that the monitor cycle
+// checks all open positions for stop loss and volatility exits.
+func TestRunMonitorCycle_ChecksAllOpenPositions(t *testing.T) {
+	// Create temporary database
+	db, err := persistence.OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	// Run migrations
+	err = persistence.RunMigrations(db, "../../migrations")
+	if err != nil {
+		t.Fatalf("failed to run migrations: %v", err)
+	}
+
+	// Setup repositories
+	posRepo := persistence.NewPositionRepository(db)
+	bankRepo := persistence.NewBankrollRepository(db)
+
+	// Initialize bankroll
+	err = bankRepo.Initialize("mock", 100.0)
+	if err != nil {
+		t.Fatalf("failed to initialize bankroll: %v", err)
+	}
+
+	// Create an open position
+	pos := &persistence.Position{
+		Platform:            "mock",
+		MarketID:            "test-market-1",
+		MarketTitle:         "Will Bitcoin be above $100,000?",
+		Asset:               "BTC",
+		Strike:              100000,
+		Direction:           "above",
+		EntryPrice:          0.85,
+		Quantity:            10.0,
+		Side:                "YES",
+		Status:              "open",
+		SafetyMarginAtEntry: 2.0,
+		VolatilityAtEntry:   0.5,
+	}
+	_, err = posRepo.Create(pos)
+	if err != nil {
+		t.Fatalf("failed to create position: %v", err)
+	}
+
+	// Create mock platform that returns current price for the position
+	mockPlatform := &MockPlatformWithPrice{
+		name:         "mock",
+		balance:      100.0,
+		markets:      []types.Market{},
+		currentPrice: 0.80, // Below entry price but above stop loss
+	}
+
+	// Create mock volatility analyzer that returns safe margin
+	mockVolatility := &MockVolatilityAnalyzer{
+		safetyMargin:   2.0, // Safe - no volatility exit
+		vol:            0.5,
+		recommendation: volatility.RecommendationValid,
+	}
+
+	// Create sizer
+	sizerConfig := sizing.SizerConfig{
+		KellyFraction:  0.25,
+		MinPosition:    1.0,
+		MaxBankrollPct: 0.20,
+	}
+	sizer := sizing.NewSizer(sizerConfig)
+
+	// Create position manager
+	manager := position.NewManager(posRepo, bankRepo, mockVolatility, sizer)
+
+	// Create monitor
+	monitor := position.NewMonitor(0.15) // 15% stop loss
+
+	// Create scanner
+	params := config.Parameters{
+		ProbabilityThreshold:   0.80,
+		VolatilitySafetyMargin: 1.5,
+		StopLossPercent:        0.15,
+		KellyFraction:          0.25,
+	}
+	sc := scanner.NewScanner(params)
+
+	// Create bot
+	bot := NewBot(BotConfig{
+		DryRun:          true,
+		ScanInterval:    10 * time.Second,
+		MonitorInterval: 5 * time.Second,
+	}, []platform.Platform{mockPlatform}, sc, manager)
+
+	// Set monitor on bot
+	bot.SetMonitor(monitor)
+	bot.SetVolatilityAnalyzer(mockVolatility)
+	bot.SetPositionRepo(posRepo)
+
+	// Run monitor cycle - should complete without error
+	err = bot.RunMonitorCycle()
+	if err != nil {
+		t.Fatalf("RunMonitorCycle failed: %v", err)
+	}
+
+	// Position should still be open (no stop loss or volatility exit triggered)
+	positions, err := posRepo.GetOpen()
+	if err != nil {
+		t.Fatalf("failed to get open positions: %v", err)
+	}
+
+	if len(positions) != 1 {
+		t.Errorf("expected 1 open position, got %d", len(positions))
+	}
+}
+
+// TestRunMonitorCycle_TriggersStopLoss tests that stop loss exits are triggered.
+func TestRunMonitorCycle_TriggersStopLoss(t *testing.T) {
+	// Create temporary database
+	db, err := persistence.OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	// Run migrations
+	err = persistence.RunMigrations(db, "../../migrations")
+	if err != nil {
+		t.Fatalf("failed to run migrations: %v", err)
+	}
+
+	// Setup repositories
+	posRepo := persistence.NewPositionRepository(db)
+	bankRepo := persistence.NewBankrollRepository(db)
+
+	// Initialize bankroll
+	err = bankRepo.Initialize("mock", 100.0)
+	if err != nil {
+		t.Fatalf("failed to initialize bankroll: %v", err)
+	}
+
+	// Create an open position
+	pos := &persistence.Position{
+		Platform:            "mock",
+		MarketID:            "test-market-stop-loss",
+		MarketTitle:         "Will Bitcoin be above $100,000?",
+		Asset:               "BTC",
+		Strike:              100000,
+		Direction:           "above",
+		EntryPrice:          0.90,
+		Quantity:            10.0,
+		Side:                "YES",
+		Status:              "open",
+		SafetyMarginAtEntry: 2.0,
+		VolatilityAtEntry:   0.5,
+	}
+	posID, err := posRepo.Create(pos)
+	if err != nil {
+		t.Fatalf("failed to create position: %v", err)
+	}
+
+	// Create mock platform with price below stop loss threshold
+	// Stop loss at 15%: 0.90 * 0.85 = 0.765
+	// Current price 0.70 is below threshold
+	mockPlatform := &MockPlatformWithPrice{
+		name:         "mock",
+		balance:      100.0,
+		markets:      []types.Market{},
+		currentPrice: 0.70, // Below stop loss threshold
+	}
+
+	// Create mock volatility analyzer
+	mockVolatility := &MockVolatilityAnalyzer{
+		safetyMargin:   2.0,
+		vol:            0.5,
+		recommendation: volatility.RecommendationValid,
+	}
+
+	// Create sizer
+	sizerConfig := sizing.SizerConfig{
+		KellyFraction:  0.25,
+		MinPosition:    1.0,
+		MaxBankrollPct: 0.20,
+	}
+	sizer := sizing.NewSizer(sizerConfig)
+
+	// Create position manager
+	manager := position.NewManager(posRepo, bankRepo, mockVolatility, sizer)
+
+	// Create monitor with 15% stop loss
+	monitor := position.NewMonitor(0.15)
+
+	// Create scanner
+	params := config.Parameters{
+		ProbabilityThreshold:   0.80,
+		VolatilitySafetyMargin: 1.5,
+		StopLossPercent:        0.15,
+		KellyFraction:          0.25,
+	}
+	sc := scanner.NewScanner(params)
+
+	// Create bot
+	bot := NewBot(BotConfig{
+		DryRun:          true,
+		ScanInterval:    10 * time.Second,
+		MonitorInterval: 5 * time.Second,
+	}, []platform.Platform{mockPlatform}, sc, manager)
+
+	// Set monitor and dependencies
+	bot.SetMonitor(monitor)
+	bot.SetVolatilityAnalyzer(mockVolatility)
+	bot.SetPositionRepo(posRepo)
+
+	// Run monitor cycle
+	err = bot.RunMonitorCycle()
+	if err != nil {
+		t.Fatalf("RunMonitorCycle failed: %v", err)
+	}
+
+	// Position should be closed due to stop loss
+	closedPos, err := posRepo.GetByID(posID)
+	if err != nil {
+		t.Fatalf("failed to get position: %v", err)
+	}
+
+	if closedPos.Status != "closed" {
+		t.Errorf("expected position to be closed, got status %s", closedPos.Status)
+	}
+
+	if closedPos.ExitReason == nil || *closedPos.ExitReason != "stop_loss" {
+		exitReason := "nil"
+		if closedPos.ExitReason != nil {
+			exitReason = *closedPos.ExitReason
+		}
+		t.Errorf("expected exit reason 'stop_loss', got %s", exitReason)
+	}
+}
+
+// TestRunMonitorCycle_TriggersVolatilityExit tests that volatility exits are triggered.
+func TestRunMonitorCycle_TriggersVolatilityExit(t *testing.T) {
+	// Create temporary database
+	db, err := persistence.OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	// Run migrations
+	err = persistence.RunMigrations(db, "../../migrations")
+	if err != nil {
+		t.Fatalf("failed to run migrations: %v", err)
+	}
+
+	// Setup repositories
+	posRepo := persistence.NewPositionRepository(db)
+	bankRepo := persistence.NewBankrollRepository(db)
+
+	// Initialize bankroll
+	err = bankRepo.Initialize("mock", 100.0)
+	if err != nil {
+		t.Fatalf("failed to initialize bankroll: %v", err)
+	}
+
+	// Create an open position
+	pos := &persistence.Position{
+		Platform:            "mock",
+		MarketID:            "test-market-vol-exit",
+		MarketTitle:         "Will Bitcoin be above $100,000?",
+		Asset:               "BTC",
+		Strike:              100000,
+		Direction:           "above",
+		EntryPrice:          0.90,
+		Quantity:            10.0,
+		Side:                "YES",
+		Status:              "open",
+		SafetyMarginAtEntry: 2.0,
+		VolatilityAtEntry:   0.5,
+	}
+	posID, err := posRepo.Create(pos)
+	if err != nil {
+		t.Fatalf("failed to create position: %v", err)
+	}
+
+	// Create mock platform with price above stop loss
+	mockPlatform := &MockPlatformWithPrice{
+		name:         "mock",
+		balance:      100.0,
+		markets:      []types.Market{},
+		currentPrice: 0.85, // Above stop loss threshold
+	}
+
+	// Create mock volatility analyzer with LOW safety margin (below 0.8 threshold)
+	mockVolatility := &MockVolatilityAnalyzer{
+		safetyMargin:   0.5, // Below 0.8 threshold - triggers volatility exit
+		vol:            0.8,
+		recommendation: volatility.RecommendationReject,
+	}
+
+	// Create sizer
+	sizerConfig := sizing.SizerConfig{
+		KellyFraction:  0.25,
+		MinPosition:    1.0,
+		MaxBankrollPct: 0.20,
+	}
+	sizer := sizing.NewSizer(sizerConfig)
+
+	// Create position manager
+	manager := position.NewManager(posRepo, bankRepo, mockVolatility, sizer)
+
+	// Create monitor with 15% stop loss
+	monitor := position.NewMonitor(0.15)
+
+	// Create scanner
+	params := config.Parameters{
+		ProbabilityThreshold:   0.80,
+		VolatilitySafetyMargin: 1.5,
+		StopLossPercent:        0.15,
+		KellyFraction:          0.25,
+	}
+	sc := scanner.NewScanner(params)
+
+	// Create bot
+	bot := NewBot(BotConfig{
+		DryRun:          true,
+		ScanInterval:    10 * time.Second,
+		MonitorInterval: 5 * time.Second,
+	}, []platform.Platform{mockPlatform}, sc, manager)
+
+	// Set monitor and dependencies
+	bot.SetMonitor(monitor)
+	bot.SetVolatilityAnalyzer(mockVolatility)
+	bot.SetPositionRepo(posRepo)
+
+	// Run monitor cycle
+	err = bot.RunMonitorCycle()
+	if err != nil {
+		t.Fatalf("RunMonitorCycle failed: %v", err)
+	}
+
+	// Position should be closed due to volatility exit
+	closedPos, err := posRepo.GetByID(posID)
+	if err != nil {
+		t.Fatalf("failed to get position: %v", err)
+	}
+
+	if closedPos.Status != "closed" {
+		t.Errorf("expected position to be closed, got status %s", closedPos.Status)
+	}
+
+	if closedPos.ExitReason == nil || *closedPos.ExitReason != "volatility_exit" {
+		exitReason := "nil"
+		if closedPos.ExitReason != nil {
+			exitReason = *closedPos.ExitReason
+		}
+		t.Errorf("expected exit reason 'volatility_exit', got %s", exitReason)
+	}
+}
+
+// TestRunMonitorCycle_NoOpenPositions tests that monitor cycle handles empty positions gracefully.
+func TestRunMonitorCycle_NoOpenPositions(t *testing.T) {
+	// Create temporary database
+	db, err := persistence.OpenDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	// Run migrations
+	err = persistence.RunMigrations(db, "../../migrations")
+	if err != nil {
+		t.Fatalf("failed to run migrations: %v", err)
+	}
+
+	// Setup repositories
+	posRepo := persistence.NewPositionRepository(db)
+	bankRepo := persistence.NewBankrollRepository(db)
+
+	// Initialize bankroll
+	err = bankRepo.Initialize("mock", 100.0)
+	if err != nil {
+		t.Fatalf("failed to initialize bankroll: %v", err)
+	}
+
+	// Create mock platform
+	mockPlatform := &MockPlatformWithPrice{
+		name:         "mock",
+		balance:      100.0,
+		markets:      []types.Market{},
+		currentPrice: 0.85,
+	}
+
+	// Create mock volatility analyzer
+	mockVolatility := &MockVolatilityAnalyzer{
+		safetyMargin:   2.0,
+		vol:            0.5,
+		recommendation: volatility.RecommendationValid,
+	}
+
+	// Create sizer
+	sizerConfig := sizing.SizerConfig{
+		KellyFraction:  0.25,
+		MinPosition:    1.0,
+		MaxBankrollPct: 0.20,
+	}
+	sizer := sizing.NewSizer(sizerConfig)
+
+	// Create position manager
+	manager := position.NewManager(posRepo, bankRepo, mockVolatility, sizer)
+
+	// Create monitor
+	monitor := position.NewMonitor(0.15)
+
+	// Create scanner
+	params := config.Parameters{
+		ProbabilityThreshold:   0.80,
+		VolatilitySafetyMargin: 1.5,
+		StopLossPercent:        0.15,
+		KellyFraction:          0.25,
+	}
+	sc := scanner.NewScanner(params)
+
+	// Create bot
+	bot := NewBot(BotConfig{
+		DryRun:          true,
+		ScanInterval:    10 * time.Second,
+		MonitorInterval: 5 * time.Second,
+	}, []platform.Platform{mockPlatform}, sc, manager)
+
+	// Set monitor and dependencies
+	bot.SetMonitor(monitor)
+	bot.SetVolatilityAnalyzer(mockVolatility)
+	bot.SetPositionRepo(posRepo)
+
+	// Run monitor cycle - should succeed without error
+	err = bot.RunMonitorCycle()
+	if err != nil {
+		t.Fatalf("RunMonitorCycle failed: %v", err)
+	}
+}
+
+// MockPlatformWithPrice extends MockPlatform with current price support.
+type MockPlatformWithPrice struct {
+	name         string
+	markets      []types.Market
+	balance      float64
+	listErr      error
+	currentPrice float64
+}
+
+func (m *MockPlatformWithPrice) Name() string {
+	return m.name
+}
+
+func (m *MockPlatformWithPrice) ListMarkets(filter types.MarketFilter) ([]types.Market, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	return m.markets, nil
+}
+
+func (m *MockPlatformWithPrice) GetOrderBook(tokenID string) (*types.OrderBook, error) {
+	// Return order book with the current price
+	return &types.OrderBook{
+		Bids: []types.Level{{Price: m.currentPrice, Size: 100}},
+		Asks: []types.Level{{Price: m.currentPrice + 0.01, Size: 100}},
+	}, nil
+}
+
+func (m *MockPlatformWithPrice) GetBalance() (float64, error) {
+	return m.balance, nil
+}
+
+func (m *MockPlatformWithPrice) GetPositions() ([]types.Position, error) {
+	return []types.Position{}, nil
+}
+
+func (m *MockPlatformWithPrice) GetCurrentPrice(marketID string) (float64, error) {
+	return m.currentPrice, nil
+}
+
 // TestRunScanCycle_SkipsIneligibleMarkets tests that ineligible markets are skipped.
 func TestRunScanCycle_SkipsIneligibleMarkets(t *testing.T) {
 	// Create temporary database

@@ -592,9 +592,17 @@
 
 ---
 
-## Fatia 10.2: Bot - Monitor Cycle
+## Fatia 10.2: Bot - Monitor Cycle ✅ CONCLUÍDA
 **Risco de Contexto:** Médio
 **Arquivos Esperados:** `internal/bot/bot.go` (update)
+
+**Notas de Implementação:**
+- RunMonitorCycle itera sobre todas posições abertas via PositionRepository
+- Para cada posição: get current price, check stop loss, check volatility exit
+- PriceProvider interface para obter preço atual do mercado via plataforma
+- Setters adicionados: SetMonitor, SetVolatilityAnalyzer, SetPositionRepo
+- Logging estruturado para todas operações e exits
+- Testes cobrem: position OK, stop loss trigger, volatility exit trigger, no positions
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Monitor cycle checa todas positions abertas.
