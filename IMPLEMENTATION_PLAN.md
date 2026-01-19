@@ -733,9 +733,17 @@
 
 ---
 
-## Fatia 12.2: Dashboard - Seções Bankroll e Positions
+## Fatia 12.2: Dashboard - Seções Bankroll e Positions ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/dashboard/views/bankroll.go`, `internal/dashboard/views/positions.go`
+
+**Notas de Implementação:**
+- BankrollView renderiza saldo por plataforma com delta colorido (+verde/-vermelho)
+- PositionsView renderiza lista de posições abertas com PnL unrealized colorido
+- DataProvider interface para abstrair fonte de dados (DB ou mock)
+- DBDataProvider integra com BankrollRepository e PositionRepository
+- Model atualizado para usar views e provider
+- Suporte para refresh manual com tecla 'r'
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Mostra saldo por plataforma e lista de positions abertas.
