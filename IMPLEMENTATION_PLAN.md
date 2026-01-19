@@ -710,9 +710,18 @@
 
 # FASE 12: DASHBOARD (Terminal UI)
 
-## Fatia 12.1: Dashboard - Layout Base
+## Fatia 12.1: Dashboard - Layout Base ✅ CONCLUÍDA
 **Risco de Contexto:** Médio
 **Arquivos Esperados:** `internal/dashboard/app.go`, `internal/dashboard/model.go`
+
+**Notas de Implementação:**
+- App struct com tea.Program para gerenciar o dashboard
+- Model struct com lastUpdate, quitting, width, height
+- View renderiza header com título "Prediction Market Bot" e timestamp
+- Tick a cada segundo para atualizar timestamp
+- Suporte para 'q' e 'ctrl+c' para sair
+- Lipgloss para estilização (cores, bordas, padding)
+- Flag --dashboard no main.go para ativar modo dashboard
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Dashboard mostra header com título e timestamp.
@@ -855,8 +864,8 @@ Se falhar, NÃO avançar.
 | 8 | Abrir Posição (DRY) | 3 | ✅ |
 | 9 | Monitorar e Sair | 3 | ✅ |
 | 10 | Bot Loop | 3 | ✅ |
-| 11 | Learning System | 3 | |
-| 12 | Dashboard | 3 | |
+| 11 | Learning System | 3 | ✅ |
+| 12 | Dashboard | 3 | 🔄 |
 | 13 | Live Trading | 2 | ⚠️ |
 | 14 | Backtesting | 3 | |
 

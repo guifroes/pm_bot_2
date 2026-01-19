@@ -10,6 +10,7 @@ import (
 
 	"prediction-bot/internal/bot"
 	"prediction-bot/internal/config"
+	"prediction-bot/internal/dashboard"
 	"prediction-bot/internal/persistence"
 	"prediction-bot/internal/platform"
 	"prediction-bot/internal/platform/kalshi"
@@ -28,6 +29,7 @@ func main() {
 	configPath := flag.String("config", "config/config.yaml", "Path to config file")
 	dryRun := flag.Bool("dry-run", true, "Run in dry-run mode (no real orders)")
 	verbose := flag.Bool("verbose", false, "Enable verbose logging")
+	dashboardMode := flag.Bool("dashboard", false, "Run with terminal dashboard UI")
 	flag.Parse()
 
 	// Setup logging
@@ -164,7 +166,20 @@ func main() {
 	log.Info().
 		Bool("dry_run", *dryRun).
 		Int("platforms", len(platforms)).
+		Bool("dashboard", *dashboardMode).
 		Msg("Starting bot main loop")
+
+	// Run dashboard mode if requested
+	if *dashboardMode {
+		log.Info().Msg("Starting dashboard UI...")
+		app := dashboard.NewApp()
+		if err := app.Run(); err != nil {
+			log.Error().Err(err).Msg("Dashboard stopped with error")
+			os.Exit(1)
+		}
+		log.Info().Msg("Dashboard closed")
+		return
+	}
 
 	// Run bot
 	if err := tradingBot.Run(ctx); err != nil {
