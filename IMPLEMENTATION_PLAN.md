@@ -641,9 +641,17 @@
 
 # FASE 11: LEARNING SYSTEM
 
-## Fatia 11.1: Learning - Coletar Trade Outcomes
+## Fatia 11.1: Learning - Coletar Trade Outcomes ✅ CONCLUÍDA
 **Risco de Contexto:** Baixo
 **Arquivos Esperados:** `internal/learning/collector.go`
+
+**Notas de Implementação:**
+- TradeOutcome struct com todos os campos relevantes: position ID, platform, asset, strike, direction, prices, PnL, times, safety margin, volatility
+- Métodos auxiliares: IsWin() para determinar trades vencedores, ReturnPercent() para calcular retorno percentual
+- CollectOutcomes retorna slice vazia se há menos de minTrades fechados
+- Resultados ordenados por exit_time DESC (mais recentes primeiro)
+- Limite de minTrades para retornar apenas N trades mais recentes
+- Parser de timestamps SQLite (formato "2006-01-02 15:04:05")
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Coleta últimos 20 trades fechados com parâmetros usados.
