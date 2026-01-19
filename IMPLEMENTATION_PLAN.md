@@ -571,9 +571,15 @@
 
 # FASE 10: BOT LOOP PRINCIPAL
 
-## Fatia 10.1: Bot - Scan Cycle
+## Fatia 10.1: Bot - Scan Cycle ✅ CONCLUÍDA
 **Risco de Contexto:** Médio
 **Arquivos Esperados:** `internal/bot/bot.go`
+
+**Notas de Implementação:**
+- Bot struct com BotConfig, platforms, scanner e manager injetados
+- RunScanCycle itera sobre todas platforms, escaneia mercados elegíveis e processa entradas
+- Logging estruturado com zerolog para todas operações
+- Testes cobrem: single platform, multiple platforms, no markets, ineligible markets
 
 **1. The Outer Gate (Behavior Test)**
 - **Teste:** Um ciclo de scan executa sem erro (APIs reais).
